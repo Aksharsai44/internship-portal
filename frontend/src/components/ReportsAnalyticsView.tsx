@@ -10,6 +10,7 @@ import {
   Zap,
   Clock,
   Printer,
+  FileText,
   ChevronRight,
   Flame,
   ShieldCheck,
@@ -261,8 +262,8 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
-      {/* ── Top Header Bar ── */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* ── Top Header Bar (Hidden in Print) ── */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-sky-500 text-white flex items-center justify-center shadow-md shadow-indigo-500/20">
@@ -308,8 +309,8 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
         )}
       </div>
 
-      {/* ── Live Telemetry Ticker Strip ── */}
-      <div className="p-3 bg-slate-950 text-slate-200 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between gap-4 overflow-hidden">
+      {/* ── Live Telemetry Ticker Strip (Hidden in Print) ── */}
+      <div className="p-3 bg-slate-950 text-slate-200 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between gap-4 overflow-hidden print:hidden">
         <div className="flex items-center gap-3 min-w-0">
           <span className="flex-shrink-0 px-2 py-0.5 bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-md text-[10px] font-mono font-bold flex items-center gap-1.5">
             <Activity className="w-3 h-3 text-sky-400 animate-pulse" />
@@ -451,10 +452,10 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                       <Users className="w-4 h-4 text-indigo-600" />
-                      <span>Student Telemetry Directory ({batchStudents.length})</span>
+                      <span>Student Directory ({batchStudents.length})</span>
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Click the inspect button on any student to open their complete 360° analytics dossier.
+                      Click the Report button on any student to open their comprehensive dossier.
                     </p>
                   </div>
 
@@ -495,7 +496,7 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
                         <th className="py-3.5 px-3">Coding Score</th>
                         <th className="py-3.5 px-3">Reflex Speed</th>
                         <th className="py-3.5 px-3">Streak</th>
-                        <th className="py-3.5 pr-4 text-right">360° Telemetry</th>
+                        <th className="py-3.5 pr-4 text-right">Report</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
@@ -595,19 +596,18 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
                               </span>
                             </td>
 
-                            {/* 360° Action Button */}
+                            {/* Report Action Button */}
                             <td className="py-3.5 pr-4 text-right">
-                              <button
-                                onClick={() => {
-                                  setSelectedStudentForReport(s);
-                                  setViewMode("individual");
-                                }}
-                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-700 hover:to-sky-700 text-white rounded-xl text-xs font-black shadow-sm transition transform hover:-translate-y-0.5 cursor-pointer"
-                                title="Inspect Complete 360° Telemetry Dossier"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>Inspect Telemetry</span>
-                              </button>
+                              <div className="flex items-center justify-end">
+                                <button
+                                  onClick={() => onViewStudent(s)}
+                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white border border-indigo-200 hover:border-indigo-600 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+                                  title="Open Comprehensive Candidate Report"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>Report</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -678,8 +678,16 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Actions: Print PDF & Celebration Confetti */}
+                  {/* Actions: Candidate Report, Print PDF & Celebration Confetti */}
                   <div className="flex items-center gap-2.5 flex-wrap">
+                    <button
+                      onClick={() => onViewStudent(selectedStudentForReport)}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Candidate Report</span>
+                    </button>
+
                     <button
                       onClick={handleTriggerCelebration}
                       className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer transform hover:-translate-y-0.5"
@@ -689,11 +697,12 @@ export const ReportsAnalyticsView: React.FC<ReportsAnalyticsViewProps> = ({
                     </button>
 
                     <button
-                      onClick={handlePrintOrDownloadPdf}
+                      onClick={() => onViewStudent(selectedStudentForReport)}
                       className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
+                      title="Open and Download Official Candidate Dossier PDF"
                     >
                       <Printer className="w-4 h-4" />
-                      <span>Download PDF Dossier</span>
+                      <span>Download PDF Report</span>
                     </button>
                   </div>
                 </div>

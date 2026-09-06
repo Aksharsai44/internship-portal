@@ -257,3 +257,203 @@
 [data-theme="dark"] .syn-func { color: #38bdf8; }
 .dark .syn-decorator,
 [data-theme="dark"] .syn-decorator { color: #e879f9; }
+
+/* Custom smooth horizontal scrollbar for heatmap */
+.heatmap-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #6366f1 #f1f5f9;
+}
+.heatmap-scrollbar::-webkit-scrollbar {
+  height: 8px;
+}
+.heatmap-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+}
+.heatmap-scrollbar::-webkit-scrollbar-thumb {
+  background: #818cf8;
+  border-radius: 9999px;
+  border: 2px solid #ffffff;
+}
+.heatmap-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #6366f1;
+}
+
+/* ============================================= */
+/* Candidate Report — Print / PDF Export Styles  */
+/* ============================================= */
+@media print {
+  /* Hide all app chrome, mock video players, and print-hidden elements */
+  header, nav, aside, .print\:hidden, [data-print-hidden], .aspect-video {
+    display: none !important;
+  }
+
+  /* When candidate report modal is open, ensure background app content is completely hidden */
+  body:has(#candidate-report-modal) #app-main-layout,
+  body:has(#candidate-report-modal) .app-main-layout,
+  body:has(#candidate-report-modal) main:not(#candidate-report-main) {
+    display: none !important;
+  }
+
+  #candidate-report-modal {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #candidate-report-main {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  /* Explicit print grid rules for clean document structure */
+  .print\:grid-cols-1 {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  }
+  .print\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .print\:col-span-1 {
+    grid-column: span 1 / span 1 !important;
+  }
+  .print\:col-span-2 {
+    grid-column: span 2 / span 2 !important;
+  }
+  .print\:w-full {
+    width: 100% !important;
+  }
+
+  /* Reset body */
+  body {
+    background: white !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Report overlay becomes static */
+  .fixed {
+    position: static !important;
+    background: white !important;
+  }
+
+  /* Remove rounded corners, shadows, backdrop for print */
+  .shadow-2xl, .shadow-xl, .shadow-lg, .shadow-md, .shadow-sm, .shadow-xs, .shadow-2xs {
+    box-shadow: none !important;
+  }
+
+  .backdrop-blur-sm, .backdrop-blur-xl, .backdrop-blur-md {
+    backdrop-filter: none !important;
+  }
+
+  /* Page break control - allow sections to flow naturally without large blank gaps */
+  section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* Prevent Section Headers from being orphaned alone at the bottom of a page */
+  section > div:first-child,
+  .report-section-header,
+  h1, h2, h3, h4 {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Convert 2-column card grids to block in print so children can break across pages cleanly without being sliced by Chromium's grid engine */
+  .grid-cols-1.lg\:grid-cols-2,
+  .lg\:grid-cols-2 {
+    display: block !important;
+  }
+  .grid-cols-1.lg\:grid-cols-2 > *,
+  .lg\:grid-cols-2 > * {
+    display: block !important;
+    margin-bottom: 0.875rem !important;
+  }
+
+  /* CRITICAL: Prevent graphs, charts, SVGs, and cards from being cut in half across pages */
+  .recharts-responsive-container,
+  .recharts-wrapper,
+  .recharts-surface,
+  svg,
+  .break-inside-avoid,
+  .p-5,
+  .p-6,
+  [class*="rounded-2xl"],
+  [class*="rounded-3xl"] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Cards in print must be display: block so Chromium respects break-inside: avoid */
+  .break-inside-avoid,
+  .p-5.rounded-2xl,
+  .p-6.rounded-2xl,
+  .p-5.rounded-3xl,
+  .p-6.rounded-3xl {
+    display: block !important;
+  }
+
+  /* Keep chart SVG intact and visible */
+  svg.recharts-surface,
+  .recharts-surface,
+  svg {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .recharts-responsive-container,
+  .recharts-wrapper {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  /* Compact vertical spacing to keep continuous document flow without massive blank spaces */
+  .space-y-10 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.875rem !important;
+  }
+  .space-y-8 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.75rem !important;
+  }
+  .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.625rem !important;
+  }
+  .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.5rem !important;
+  }
+
+  /* Preserve chart SVG colors and backgrounds */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Page margins - optimized compact margins to prevent wasted space */
+  @page {
+    margin: 0.35in 0.4in;
+    size: A4 portrait;
+  }
+
+  /* Ensure overflow visible */
+  .overflow-y-auto, .overflow-x-auto, .overflow-hidden {
+    overflow: visible !important;
+  }
+
+  /* Remove max-height constraints */
+  .max-h-\[92vh\] {
+    max-height: none !important;
+  }
+}

@@ -586,6 +586,74 @@ Return JSON with:
     }
   });
 
+  // AI Project Submission & Benchmark Evaluator
+  app.post("/api/gemini/evaluate-project-submission", async (req, res) => {
+    try {
+      const { project, submission } = req.body;
+      const ai = getGeminiClient();
+
+      if (!ai) {
+        return res.json({ success: false, message: "No Gemini client configured" });
+      }
+
+      const prompt = `You are a Senior Technical Mentor and Code Review Lead evaluating an intern's project submission.
+Analyze how the intern's solution and architecture notes align with the project requirements and the confidential internal benchmark scenario.
+
+Project Title: ${project.title}
+Technical Category: ${project.technicalCategory}
+Maximum Leaderboard Points: ${project.leaderboardPoints}
+Executive Summary: ${project.executiveSummary || "N/A"}
+Detailed Instructions: ${project.detailedInstructions || "N/A"}
+
+CONFIDENTIAL MENTOR OBSERVATION BENCHMARK (Internal Standard):
+${project.mentorObservationBenchmark || "Standard production code quality, proper error handling, memory safety, and complete deliverables."}
+
+INTERN SUBMISSION DATA:
+Candidate Name: ${submission.studentName}
+Submitted At: ${submission.submittedAt}
+GitHub Repo: ${submission.githubRepoUrl || "Not provided"}
+Live Demo: ${submission.liveDemoUrl || "Not provided"}
+Uploaded File: ${submission.fileName || "Not provided"}
+
+INTERN SOLUTION & ARCHITECTURE WRITEUP:
+"${submission.submissionNotes || "No architecture notes provided by the candidate."}"
+
+TASK:
+1. Verify if the intern's notes and deliverables demonstrate proper synchronization with the project requirements.
+2. Check whether the intern addressed or satisfied the internal observation benchmark criteria.
+3. Decide the final verdict ("passed" or "needs_revision").
+4. Assign leaderboard points (0 to ${project.leaderboardPoints}).
+5. Generate constructive, professional mentor feedback explaining the evaluation and what was verified.
+6. List up to 3 key benchmark matches and up to 2 areas for improvement.
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "status": "passed" | "needs_revision",
+  "gradePoints": number,
+  "mentorFeedback": "string",
+  "alignmentScore": number,
+  "syncSummary": "string",
+  "keyMatches": ["string"],
+  "suggestedImprovements": ["string"]
+}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
+        },
+      });
+
+      const result = JSON.parse(response.text || "{}");
+      res.json({ success: true, result });
+    } catch (err: any) {
+      console.error("Error evaluating project submission with Gemini:", err);
+      res.status(500).json({ error: err.message || "Failed to evaluate submission" });
+    }
+  });
+
   // Subprocess execution helper with safety timeout
   function runProcess(
     cmd: string,

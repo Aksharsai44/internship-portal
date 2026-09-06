@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import {
   UserRole,
@@ -12,7 +12,34 @@ import {
   ScheduledMeeting,
   ClientUser,
   InterviewRequest,
+  ProjectAssignment,
+  ProjectSubmission,
+  ShiftPattern,
+  InternRosterAssignment,
+  AttendanceRecord,
+  PunchLogEntry,
+  DailyActivityLog,
+  HolidayEvent,
+  LeaveRequest,
+  InternResumeData,
+  AppNotification,
 } from "./types";
+import {
+  INITIAL_PROJECT_ASSIGNMENTS,
+  INITIAL_PROJECT_SUBMISSIONS,
+} from "./data/mockProjects";
+import {
+  INITIAL_SHIFT_PATTERNS,
+  INITIAL_ROSTER_ASSIGNMENTS,
+  INITIAL_HOLIDAYS,
+  INITIAL_LEAVE_REQUESTS,
+  INITIAL_ATTENDANCE_RECORDS,
+  INITIAL_PUNCH_LOGS,
+  INITIAL_DAILY_ACTIVITY_LOGS,
+} from "./data/attendanceData";
+import { INITIAL_RESUME_DATA } from "./data/mockResumeData";
+import { INITIAL_NOTIFICATIONS } from "./data/notificationData";
+import { AssignedProjectsKanbanView } from "./components/AssignedProjectsKanbanView";
 import {
   initialBatches,
   initialStudents,
@@ -38,7 +65,7 @@ import { SettingsView } from "./components/SettingsView";
 import LandingView from "./components/LandingView";
 import LoginModal from "./components/LoginModal";
 import { StudentDashboardView } from "./components/StudentDashboardView";
-import { StudentDetailModal } from "./components/StudentDetailModal";
+import { CandidateReportView } from "./components/CandidateReportView";
 import { ClientDashboardView } from "./components/ClientDashboardView";
 import { ClientLeaderboardView } from "./components/ClientLeaderboardView";
 import { ClientCohortsView } from "./components/ClientCohortsView";
@@ -47,6 +74,12 @@ import { ClientAnalyticsView } from "./components/ClientAnalyticsView";
 import { InterviewRequestsView } from "./components/InterviewRequestsView";
 import { InternInterviewsView } from "./components/InternInterviewsView";
 import { ClientManagementView } from "./components/ClientManagementView";
+import { ShiftManagementView } from "./components/ShiftManagementView";
+import { InternAttendanceView } from "./components/InternAttendanceView";
+import { DailyActivityLogView } from "./components/DailyActivityLogView";
+import { AdminDailyLogsReviewView } from "./components/AdminDailyLogsReviewView";
+import { AIResumeBuilderView } from "./components/AIResumeBuilderView";
+import { NotificationDropdown } from "./components/NotificationDropdown";
 import { Minda2Logo } from "./components/Minda2Logo";
 import {
   LayoutDashboard,
@@ -71,6 +104,12 @@ import {
   Library,
   Calendar,
   BookmarkCheck,
+  FolderKanban,
+  Clock,
+  FileText,
+  CheckCircle2,
+  Sparkles,
+  Bell,
 } from "lucide-react";
 import { ResourcesView } from "./components/ResourcesView";
 import { ProfileView } from "./components/ProfileView";
@@ -105,6 +144,320 @@ export default function App() {
     }
   });
 
+  // Project Assignments Board State
+  const [projectAssignments, setProjectAssignments] = useState<ProjectAssignment[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_project_assignments");
+      if (saved) {
+        const parsed: ProjectAssignment[] = JSON.parse(saved);
+        return parsed.map((p) => ({
+          ...p,
+          startDate: p.startDate || "2026-09-08",
+          startTime: p.startTime || "09:00",
+          deadlineTime: p.deadlineTime || "23:59",
+        }));
+      }
+      return INITIAL_PROJECT_ASSIGNMENTS;
+    } catch {
+      return INITIAL_PROJECT_ASSIGNMENTS;
+    }
+  });
+
+  const [projectSubmissions, setProjectSubmissions] = useState<ProjectSubmission[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_project_submissions");
+      if (saved) {
+        const parsed: ProjectSubmission[] = JSON.parse(saved);
+        const existingIds = new Set(parsed.map((s) => s.id));
+        const missing = INITIAL_PROJECT_SUBMISSIONS.filter((s) => !existingIds.has(s.id));
+        if (missing.length > 0) {
+          const merged = [...parsed, ...missing];
+          try {
+            localStorage.setItem("mind2i_project_submissions", JSON.stringify(merged));
+          } catch {}
+          return merged;
+        }
+        return parsed;
+      }
+      return INITIAL_PROJECT_SUBMISSIONS;
+    } catch {
+      return INITIAL_PROJECT_SUBMISSIONS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_project_assignments", JSON.stringify(projectAssignments));
+    } catch {}
+  }, [projectAssignments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_project_submissions", JSON.stringify(projectSubmissions));
+    } catch {}
+  }, [projectSubmissions]);
+
+  // Shifts & Attendance State
+  const [shiftPatterns, setShiftPatterns] = useState<ShiftPattern[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_shift_patterns");
+      return saved ? JSON.parse(saved) : INITIAL_SHIFT_PATTERNS;
+    } catch {
+      return INITIAL_SHIFT_PATTERNS;
+    }
+  });
+
+  const [rosterAssignments, setRosterAssignments] = useState<InternRosterAssignment[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_roster_assignments");
+      if (saved) {
+        const parsed: InternRosterAssignment[] = JSON.parse(saved);
+        return parsed.map((item) => {
+          const initMatch = INITIAL_ROSTER_ASSIGNMENTS.find((i) => i.internId === item.internId);
+          return {
+            ...item,
+            batchId: item.batchId || initMatch?.batchId || "batch_ai",
+            batchName: item.batchName || initMatch?.batchName || "Full-Stack AI Engineering",
+          };
+        });
+      }
+      return INITIAL_ROSTER_ASSIGNMENTS;
+    } catch {
+      return INITIAL_ROSTER_ASSIGNMENTS;
+    }
+  });
+
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_attendance_records");
+      if (saved) {
+        const parsed: AttendanceRecord[] = JSON.parse(saved);
+        // Filter out any stale future attendance records past today (Sep 6, 2026), keeping only valid historical records and holidays/leaves
+        return parsed.filter(
+          (r) => r.date <= "2026-09-06" || r.status === "holiday" || r.status === "on_leave"
+        );
+      }
+      return INITIAL_ATTENDANCE_RECORDS;
+    } catch {
+      return INITIAL_ATTENDANCE_RECORDS;
+    }
+  });
+
+  const [punchLogs, setPunchLogs] = useState<PunchLogEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_punch_logs");
+      return saved ? JSON.parse(saved) : INITIAL_PUNCH_LOGS;
+    } catch {
+      return INITIAL_PUNCH_LOGS;
+    }
+  });
+
+  const [dailyActivityLogs, setDailyActivityLogs] = useState<DailyActivityLog[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_daily_activity_logs");
+      if (saved) {
+        const parsed: DailyActivityLog[] = JSON.parse(saved);
+        if (parsed.length === 0) return INITIAL_DAILY_ACTIVITY_LOGS;
+        return parsed.map((item) => {
+          const initMatch = INITIAL_DAILY_ACTIVITY_LOGS.find((i) => i.id === item.id);
+          return {
+            ...item,
+            batchId: item.batchId || initMatch?.batchId || "batch_ai",
+            batchName: item.batchName || initMatch?.batchName || "Full-Stack AI Engineering",
+            status: item.status || initMatch?.status || "pending",
+          };
+        });
+      }
+      return INITIAL_DAILY_ACTIVITY_LOGS;
+    } catch {
+      return INITIAL_DAILY_ACTIVITY_LOGS;
+    }
+  });
+
+  const [holidays, setHolidays] = useState<HolidayEvent[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_holidays");
+      return saved ? JSON.parse(saved) : INITIAL_HOLIDAYS;
+    } catch {
+      return INITIAL_HOLIDAYS;
+    }
+  });
+
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_leave_requests");
+      if (saved) {
+        const parsed: LeaveRequest[] = JSON.parse(saved);
+        if (parsed.length > 0) return parsed;
+      }
+      return INITIAL_LEAVE_REQUESTS;
+    } catch {
+      return INITIAL_LEAVE_REQUESTS;
+    }
+  });
+
+  const [resumeData, setResumeData] = useState<InternResumeData>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_resume_data");
+      return saved ? JSON.parse(saved) : INITIAL_RESUME_DATA;
+    } catch {
+      return INITIAL_RESUME_DATA;
+    }
+  });
+
+  const [toastNotification, setToastNotification] = useState<string | null>(null);
+  const showToastNotification = (msg: string) => {
+    setToastNotification(msg);
+    setTimeout(() => setToastNotification(null), 3500);
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_shift_patterns", JSON.stringify(shiftPatterns));
+    } catch {}
+  }, [shiftPatterns]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_roster_assignments", JSON.stringify(rosterAssignments));
+    } catch {}
+  }, [rosterAssignments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_attendance_records", JSON.stringify(attendanceRecords));
+    } catch {}
+  }, [attendanceRecords]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_punch_logs", JSON.stringify(punchLogs));
+    } catch {}
+  }, [punchLogs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_daily_activity_logs", JSON.stringify(dailyActivityLogs));
+    } catch {}
+  }, [dailyActivityLogs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_holidays", JSON.stringify(holidays));
+    } catch {}
+  }, [holidays]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_leave_requests", JSON.stringify(leaveRequests));
+    } catch {}
+  }, [leaveRequests]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_resume_data", JSON.stringify(resumeData));
+    } catch {}
+  }, [resumeData]);
+
+  // Auto-sync students from batches into roster assignments
+  useEffect(() => {
+    if (students && students.length > 0) {
+      setRosterAssignments((prevRoster) => {
+        let hasChanges = false;
+        const updated = [...prevRoster];
+
+        students.forEach((student) => {
+          const existingIdx = updated.findIndex(
+            (r) => r.internId === student.id || r.internName.toLowerCase() === student.name.toLowerCase()
+          );
+          const studentBatch = batches.find((b) => b.id === student.batchId);
+          const batchName = student.batchName || studentBatch?.name || "Full-Stack AI Engineering";
+
+          if (existingIdx === -1) {
+            updated.push({
+              internId: student.id,
+              internName: student.name,
+              avatar: student.avatar,
+              role: student.branch ? `${student.branch} Intern` : "Software Development Intern",
+              department: student.branch || "Software Development",
+              batchId: student.batchId || studentBatch?.id || "batch_ai",
+              batchName,
+              shiftId: shiftPatterns[0]?.id || "shift_morning",
+              shiftName: shiftPatterns[0]?.name || "Morning Shift",
+              requiredHours: shiftPatterns[0]?.requiredHours || 8,
+              customWeekends: [0, 6],
+            });
+            hasChanges = true;
+          } else {
+            const current = updated[existingIdx];
+            if (current.batchName !== batchName || current.batchId !== (student.batchId || studentBatch?.id)) {
+              updated[existingIdx] = {
+                ...current,
+                batchId: student.batchId || studentBatch?.id || current.batchId,
+                batchName,
+                internName: student.name,
+              };
+              hasChanges = true;
+            }
+          }
+        });
+
+        return hasChanges ? updated : prevRoster;
+      });
+    }
+  }, [students, batches, shiftPatterns]);
+
+  const handleCreateProjectAssignment = (newProj: ProjectAssignment) => {
+    setProjectAssignments((prev) => [newProj, ...prev]);
+  };
+
+  const handleUpdateProjectAssignment = (updatedProj: ProjectAssignment) => {
+    setProjectAssignments((prev) =>
+      prev.map((p) => (p.id === updatedProj.id ? updatedProj : p))
+    );
+  };
+
+  const handleDeleteProjectAssignment = (projectId: string) => {
+    setProjectAssignments((prev) => prev.filter((p) => p.id !== projectId));
+  };
+
+  const handleSubmitProjectWork = (submission: ProjectSubmission) => {
+    setProjectSubmissions((prev) => [
+      submission,
+      ...prev.filter(
+        (s) => !(s.projectId === submission.projectId && s.studentId === submission.studentId)
+      ),
+    ]);
+    setProjectAssignments((prev) =>
+      prev.map((p) => (p.id === submission.projectId ? { ...p, status: "in_progress" } : p))
+    );
+  };
+
+  const handleUpdateProjectSubmission = (updatedSub: ProjectSubmission) => {
+    setProjectSubmissions((prev) =>
+      prev.map((s) => (s.id === updatedSub.id ? updatedSub : s))
+    );
+    if (updatedSub.status === "passed") {
+      setProjectAssignments((prev) =>
+        prev.map((p) => (p.id === updatedSub.projectId ? { ...p, status: "completed" } : p))
+      );
+    }
+  };
+
+  const handleBulkUpdateProjectSubmissions = (updatedSubs: ProjectSubmission[]) => {
+    const updatedMap = new Map(updatedSubs.map((s) => [s.id, s]));
+    setProjectSubmissions((prev) =>
+      prev.map((s) => (updatedMap.has(s.id) ? updatedMap.get(s.id)! : s))
+    );
+    const hasPassed = updatedSubs.some((s) => s.status === "passed");
+    if (hasPassed && updatedSubs.length > 0) {
+      const projectId = updatedSubs[0].projectId;
+      setProjectAssignments((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, status: "completed" } : p))
+      );
+    }
+  };
+
   const handleToggleShortlist = (internId: string) => {
     setShortlistedInternIds((prev) => {
       const next = prev.includes(internId)
@@ -128,15 +481,103 @@ export default function App() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
+  // Notification State & Interconnected Feed
+  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
+  const notificationMenuRef = useRef<HTMLDivElement>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem("mind2i_notifications");
+      return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
+    } catch {
+      return INITIAL_NOTIFICATIONS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mind2i_notifications", JSON.stringify(notifications));
+    } catch {}
+  }, [notifications]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
         setProfileMenuOpen(false);
       }
+      if (notificationMenuRef.current && !notificationMenuRef.current.contains(event.target as Node)) {
+        setNotificationMenuOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const handleAddNotification = (newNotif: Omit<AppNotification, "id" | "timestamp" | "isRead">) => {
+    const fullNotif: AppNotification = {
+      ...newNotif,
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      isRead: false,
+    };
+    setNotifications((prev) => [fullNotif, ...prev]);
+  };
+
+  const userNotifications = useMemo(() => {
+    return notifications.filter((n) => {
+      if (userRole === "admin") {
+        return n.recipientRole === "admin" || n.recipientRole === "all";
+      }
+      if (userRole === "student") {
+        if (n.recipientRole === "all") return true;
+        if (n.recipientRole !== "student") return false;
+        if (n.recipientId && currentStudent?.id && n.recipientId === currentStudent.id) return true;
+        if (n.recipientName && currentStudent?.name && n.recipientName.toLowerCase() === currentStudent.name.toLowerCase()) return true;
+        if (n.recipientEmail && currentStudent?.email && n.recipientEmail.toLowerCase() === currentStudent.email.toLowerCase()) return true;
+        if (!n.recipientId && !n.recipientName && !n.recipientEmail) return true;
+        return false;
+      }
+      if (userRole === "client") {
+        if (n.recipientRole === "all") return true;
+        if (n.recipientRole !== "client") return false;
+        if (n.recipientId && currentClient?.id && n.recipientId === currentClient.id) return true;
+        if (!n.recipientId) return true;
+        return false;
+      }
+      return false;
+    });
+  }, [notifications, userRole, currentStudent, currentClient]);
+
+  const unreadNotificationCount = useMemo(() => {
+    return userNotifications.filter((n) => !n.isRead).length;
+  }, [userNotifications]);
+
+  const handleMarkNotificationAsRead = (notifId: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, isRead: true } : n))
+    );
+  };
+
+  const handleMarkAllNotificationsAsRead = () => {
+    const userNotifIds = new Set(userNotifications.map((n) => n.id));
+    setNotifications((prev) =>
+      prev.map((n) => (userNotifIds.has(n.id) ? { ...n, isRead: true } : n))
+    );
+    showToastNotification("All notifications marked as read.");
+  };
+
+  const handleClearAllNotifications = () => {
+    const userNotifIds = new Set(userNotifications.map((n) => n.id));
+    setNotifications((prev) => prev.filter((n) => !userNotifIds.has(n.id)));
+    showToastNotification("Notifications cleared.");
+  };
+
+  const handleNotificationClick = (notif: AppNotification) => {
+    handleMarkNotificationAsRead(notif.id);
+    if (notif.actionTab) {
+      setActiveTab(notif.actionTab);
+    }
+    setNotificationMenuOpen(false);
+  };
 
   // Modals
   const [inspectedStudent, setInspectedStudent] = useState<Student | null>(null);
@@ -719,6 +1160,25 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
     setInterviewRequests((prev) => [newReq, ...prev]);
+
+    // Send targeted interview notifications to the specific intern & admin
+    handleAddNotification({
+      recipientRole: "student",
+      recipientId: intern.id,
+      recipientName: intern.name,
+      title: "New Interview Invitation",
+      message: `${currentClient.companyName} invited you for a virtual interview round.`,
+      type: "interview",
+      actionTab: "interviews",
+    });
+    handleAddNotification({
+      recipientRole: "admin",
+      title: "Interview Request Logged",
+      message: `${currentClient.companyName} requested an interview with candidate ${intern.name}.`,
+      type: "interview",
+      actionTab: "interviews",
+    });
+
     try {
       const res = await axios.post("/api/interview-requests/", {
         ...newReq,
@@ -740,8 +1200,11 @@ export default function App() {
   const adminNavItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "batch", label: "Cohorts", icon: Users },
+    { id: "shifts", label: "Shifts & Attendance", icon: Clock },
+    { id: "daily_logs", label: "Daily Logs & AI Reviews", icon: Sparkles },
     { id: "learn_hub", label: "Learn Hub", icon: BookOpen },
     { id: "assignments", label: "Assignments", icon: Code2 },
+    { id: "projects", label: "Project Assignments", icon: FolderKanban },
     { id: "live_qa", label: "Live Q&A", icon: Radio },
     { id: "reports", label: "Reports & Analytics", icon: BarChart3 },
     { id: "leaderboard", label: "Leaderboard", icon: Trophy },
@@ -760,6 +1223,14 @@ export default function App() {
 
   const studentNavItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "attendance", label: "Time Clock & Attendance", icon: Clock },
+    { id: "activity_log", label: "Daily Activity Log", icon: FileText },
+    ...(settings.enableLearnHub !== false ? [{ id: "learn_hub", label: "Learn Hub", icon: BookOpen }] : []),
+    ...(settings.enableLiveQA !== false ? [{ id: "live_qa", label: "Live Q&A", icon: Radio }] : []),
+    ...(settings.enableCodingIDE !== false ? [{ id: "assignments", label: "Assignments", icon: Code2 }] : []),
+    { id: "projects", label: "Assigned Projects", icon: FolderKanban },
+    { id: "resources", label: "Resources", icon: Library },
+    ...(settings.enableMyReport !== false ? [{ id: "reports", label: "My Report", icon: BarChart3 }] : []),
     {
       id: "interviews",
       label: "My Interviews",
@@ -767,13 +1238,12 @@ export default function App() {
       badgeText: internOpportunitiesCount > 0 ? internOpportunitiesCount.toString() : undefined,
       badgeType: "emerald",
     },
-    ...(settings.enableLearnHub ? [{ id: "learn_hub", label: "Learn Hub", icon: BookOpen }] : []),
-    ...(settings.enableCodingIDE ? [{ id: "assignments", label: "Assignments", icon: Code2 }] : []),
-    ...(settings.enableLiveQA ? [{ id: "live_qa", label: "Live Q&A", icon: Radio }] : []),
-    ...(settings.enableMyReport ? [{ id: "reports", label: "My Report", icon: BarChart3 }] : []),
-    { id: "leaderboard", label: "Leaderboard", icon: Trophy },
-    { id: "resources", label: "Resources", icon: Library },
-    ...(settings.enableCertificate ? [{ id: "certificate", label: "My Certificate", icon: Award }] : []),
+    {
+      id: "resume_builder",
+      label: "AI Resume & ATS Score",
+      icon: Sparkles,
+    },
+    ...(settings.enableCertificate !== false ? [{ id: "certificate", label: "My Certificate", icon: Award }] : []),
     { id: "profile", label: "My Profile", icon: User },
   ];
 
@@ -878,7 +1348,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans selection:bg-teal-500 selection:text-white">
       {/* TOPBAR */}
-      <header className="sticky top-0 z-40 bg-white border-b border-slate-100 px-4 sm:px-6 flex items-center justify-between shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+      <header className={`sticky top-0 z-40 bg-white border-b border-slate-100 px-4 sm:px-6 flex items-center justify-between shadow-[0_1px_3px_rgba(0,0,0,0.02)] ${inspectedStudent ? "print:hidden" : ""}`}>
         <div className={`absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r ${roleGradient}`}></div>
 
         {/* Left: Brand Logo & Mobile Menu */}
@@ -900,14 +1370,51 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right: User Profile */}
-        <div className="flex items-center gap-4 relative" ref={profileMenuRef}>
-          <button
-            onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-            className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${roleGradient} flex items-center justify-center text-white font-black text-sm shadow-md hover:shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2`}
-          >
-            {(loggedInUser?.name || loggedInUser?.contactPerson || "U").charAt(0).toUpperCase()}
-          </button>
+        {/* Right: Notifications & User Profile */}
+        <div className="flex items-center gap-3">
+          {/* Notification Icon */}
+          <div className="relative" ref={notificationMenuRef}>
+            <button
+              type="button"
+              onClick={() => setNotificationMenuOpen(!notificationMenuOpen)}
+              className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 flex items-center justify-center transition-all relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5 text-slate-600" />
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-xs ring-2 ring-white animate-pulse">
+                  {unreadNotificationCount > 9 ? "9+" : unreadNotificationCount}
+                </span>
+              )}
+            </button>
+
+            <NotificationDropdown
+              isOpen={notificationMenuOpen}
+              onClose={() => setNotificationMenuOpen(false)}
+              notifications={userNotifications}
+              onMarkAsRead={handleMarkNotificationAsRead}
+              onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+              onClearAll={handleClearAllNotifications}
+              onNotificationClick={handleNotificationClick}
+              userRole={userRole}
+              userName={
+                userRole === "admin"
+                  ? loggedInUser?.name || "Administrator"
+                  : userRole === "student"
+                  ? currentStudent?.name || loggedInUser?.name || "Intern"
+                  : loggedInUser?.companyName || "Client"
+              }
+            />
+          </div>
+
+          {/* User Profile */}
+          <div className="relative" ref={profileMenuRef}>
+            <button
+              onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+              className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${roleGradient} flex items-center justify-center text-white font-black text-sm shadow-md hover:shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 cursor-pointer`}
+            >
+              {(loggedInUser?.name || loggedInUser?.contactPerson || "U").charAt(0).toUpperCase()}
+            </button>
 
           <AnimatePresence>
             {profileMenuOpen && (
@@ -936,12 +1443,13 @@ export default function App() {
             )}
           </AnimatePresence>
         </div>
-      </header>
+      </div>
+    </header>
 
       {/* MAIN LAYOUT */}
-      <div className="flex-1 flex overflow-hidden">
+      <div id="app-main-layout" className={`flex-1 flex overflow-hidden ${inspectedStudent ? "print:hidden" : ""}`}>
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:flex w-60 xl:w-64 bg-white border-r border-slate-100 p-3.5 xl:p-4 flex-col justify-between overflow-y-auto flex-shrink-0 transition-all duration-200">
+        <aside className="hidden lg:flex print:hidden w-60 xl:w-64 bg-white border-r border-slate-100 p-3.5 xl:p-4 flex-col justify-between overflow-y-auto flex-shrink-0 transition-all duration-200">
           <div className="space-y-4">
             <nav className="space-y-1">
               <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-2.5 pb-2 flex items-center justify-between">
@@ -1127,6 +1635,24 @@ export default function App() {
               />
             )}
 
+            {activeTab === "projects" && (userRole === "admin" || userRole === "student") && (
+              <AssignedProjectsKanbanView
+                userRole={userRole}
+                currentStudent={currentStudent}
+                students={students}
+                batches={batches}
+                selectedBatch={selectedBatch}
+                projects={projectAssignments}
+                submissions={projectSubmissions}
+                onCreateProject={handleCreateProjectAssignment}
+                onUpdateProject={handleUpdateProjectAssignment}
+                onDeleteProject={handleDeleteProjectAssignment}
+                onSubmitWork={handleSubmitProjectWork}
+                onUpdateSubmission={handleUpdateProjectSubmission}
+                onBulkUpdateSubmissions={handleBulkUpdateProjectSubmissions}
+              />
+            )}
+
             {activeTab === "live_qa" && (userRole === "admin" || userRole === "student") && (
               <LiveQAManagerView
                 liveQuestions={liveQuestions} selectedBatch={selectedBatch} userRole={userRole}
@@ -1140,7 +1666,39 @@ export default function App() {
               />
             )}
 
-            {activeTab === "reports" && (userRole === "admin" || userRole === "student") && (
+            {activeTab === "reports" && userRole === "student" && currentStudent && (
+              <CandidateReportView
+                student={currentStudent}
+                onClose={() => setActiveTab("dashboard")}
+                userRole={userRole}
+                batches={batches}
+                selectedBatch={selectedBatch}
+                projects={projectAssignments}
+                submissions={projectSubmissions}
+                assignments={assignments}
+                liveQuestions={liveQuestions}
+                learnHubModules={learnHubModules}
+                isTabMode={true}
+                attendanceRecords={attendanceRecords}
+                rosterAssignments={rosterAssignments}
+                shiftPatterns={shiftPatterns}
+                holidays={holidays}
+                dailyActivityLogs={dailyActivityLogs}
+                leaveRequests={leaveRequests}
+                resumeData={resumeData}
+              />
+            )}
+
+            {activeTab === "resume_builder" && currentStudent && (
+              <AIResumeBuilderView
+                currentStudent={currentStudent}
+                resumeData={resumeData}
+                onUpdateResumeData={setResumeData}
+                onToast={showToastNotification}
+              />
+            )}
+
+            {activeTab === "reports" && userRole === "admin" && (
               <ReportsAnalyticsView
                 batches={batches} selectedBatch={selectedBatch} students={students}
                 userRole={userRole} currentStudent={currentStudent}
@@ -1180,6 +1738,34 @@ export default function App() {
               />
             )}
 
+            {activeTab === "shifts" && userRole === "admin" && (
+              <ShiftManagementView
+                shiftPatterns={shiftPatterns}
+                rosterAssignments={rosterAssignments}
+                holidays={holidays}
+                leaveRequests={leaveRequests}
+                batches={batches}
+                students={students}
+                onUpdateShiftPatterns={setShiftPatterns}
+                onUpdateRosterAssignments={setRosterAssignments}
+                onUpdateHolidays={setHolidays}
+                onUpdateLeaveRequests={setLeaveRequests}
+                onAddNotification={handleAddNotification}
+                onToast={showToastNotification}
+                onNavigateToDailyLogs={() => setActiveTab("daily_logs")}
+              />
+            )}
+
+            {activeTab === "daily_logs" && userRole === "admin" && (
+              <AdminDailyLogsReviewView
+                activityLogs={dailyActivityLogs}
+                batches={batches}
+                students={students}
+                onUpdateActivityLogs={setDailyActivityLogs}
+                onToast={showToastNotification}
+              />
+            )}
+
             {activeTab === "settings" && userRole === "admin" && (
               <SettingsView
                 settings={settings} onUpdateSettings={handleUpdateSettings}
@@ -1203,6 +1789,38 @@ export default function App() {
                 onUpdateSettings={handleUpdateSettings}
                 onUpdateScheduledMeeting={handleUpdateScheduledMeeting}
                 onToggleRecordingUnlock={() => {}}
+                shiftName={
+                  rosterAssignments.find((r) => r.internId === currentStudent.id)?.shiftName ||
+                  shiftPatterns[0]?.name ||
+                  "Morning Shift"
+                }
+                latestPunch={punchLogs.find((p) => !p.internId || p.internId === currentStudent.id)}
+              />
+            )}
+
+            {activeTab === "attendance" && userRole === "student" && currentStudent && (
+              <InternAttendanceView
+                currentStudent={currentStudent}
+                shiftPatterns={shiftPatterns}
+                rosterAssignments={rosterAssignments}
+                attendanceRecords={attendanceRecords}
+                punchLogs={punchLogs}
+                holidays={holidays}
+                leaveRequests={leaveRequests}
+                onUpdatePunchLogs={setPunchLogs}
+                onUpdateAttendanceRecords={setAttendanceRecords}
+                onCreateLeaveRequest={(req) => setLeaveRequests((prev) => [req, ...prev])}
+                onAddNotification={handleAddNotification}
+                onToast={showToastNotification}
+              />
+            )}
+
+            {activeTab === "activity_log" && userRole === "student" && currentStudent && (
+              <DailyActivityLogView
+                currentStudent={currentStudent}
+                activityLogs={dailyActivityLogs}
+                onUpdateActivityLogs={setDailyActivityLogs}
+                onToast={showToastNotification}
               />
             )}
 
@@ -1213,13 +1831,6 @@ export default function App() {
                 clients={clients}
                 batches={batches}
                 onUpdateRequests={setInterviewRequests}
-              />
-            )}
-
-            {activeTab === "leaderboard" && userRole === "student" && (
-              <LeaderboardView
-                selectedBatch={selectedBatch} students={students} userRole={userRole}
-                currentStudent={currentStudent} onViewStudent={(s) => setInspectedStudent(s)}
               />
             )}
 
@@ -1300,12 +1911,37 @@ export default function App() {
         </main>
       </div>
 
-      {/* Student Detail Modal */}
+      {/* Global Toast Notification */}
+      {toastNotification && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-bold border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastNotification}</span>
+        </div>
+      )}
+
+      {/* Candidate Performance Report Overlay */}
       {inspectedStudent && (
-        <StudentDetailModal
+        <CandidateReportView
           student={inspectedStudent}
           onClose={() => setInspectedStudent(null)}
-          onPrintReport={() => { setActiveTab("reports"); }}
+          userRole={userRole}
+          allStudents={students}
+          batches={batches}
+          selectedBatch={selectedBatch}
+          projects={projectAssignments}
+          submissions={projectSubmissions}
+          assignments={assignments}
+          liveQuestions={liveQuestions}
+          learnHubModules={learnHubModules}
+          onSelectStudent={(s) => setInspectedStudent(s)}
+          onRequestInterview={(s) => setInterviewModalIntern(s)}
+          attendanceRecords={attendanceRecords}
+          rosterAssignments={rosterAssignments}
+          shiftPatterns={shiftPatterns}
+          holidays={holidays}
+          dailyActivityLogs={dailyActivityLogs}
+          leaveRequests={leaveRequests}
+          resumeData={resumeData}
         />
       )}
 

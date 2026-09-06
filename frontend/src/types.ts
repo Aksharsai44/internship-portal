@@ -252,6 +252,51 @@ export interface Assignment {
   questions: AssignmentQuestion[];
 }
 
+export interface ProjectResource {
+  id: string;
+  title: string;
+  url: string;
+  type?: "link" | "pdf" | "doc" | "repo" | "figma";
+}
+
+export interface ProjectAssignment {
+  id: string;
+  batchId: string;
+  batchName?: string;
+  title: string;
+  technicalCategory: string;
+  startDate?: string;
+  startTime?: string;
+  deadline: string;
+  deadlineTime?: string;
+  priority: "Low" | "Medium" | "High";
+  leaderboardPoints: number;
+  executiveSummary: string;
+  detailedInstructions: string;
+  resources: ProjectResource[];
+  mentorObservationBenchmark: string; // Internal Mentor/Admin Scenario & Benchmark (Hidden from interns)
+  createdAt: string;
+  createdBy?: string;
+  status: "todo" | "in_progress" | "completed";
+}
+
+export interface ProjectSubmission {
+  id: string;
+  projectId: string;
+  studentId: string;
+  studentName: string;
+  batchId: string;
+  submittedAt: string;
+  githubRepoUrl: string;
+  liveDemoUrl: string;
+  fileName?: string;
+  fileSize?: string;
+  submissionNotes: string; // Intern's observation writeup & architecture remarks
+  status: "pending" | "passed" | "needs_revision";
+  gradePoints?: number;
+  mentorFeedback?: string;
+}
+
 export interface LiveQAResponse {
   studentId: string;
   studentName: string;
@@ -367,4 +412,227 @@ export interface AppSettings {
   defaultStudentPassword?: string;
   defaultClientPassword?: string;
   adminUsers: AdminUser[];
+}
+
+// ── Attendance, Shift Management & Time Clock Types ──
+
+export interface ShiftPattern {
+  id: string;
+  name: string; // e.g. "Morning Shift"
+  startTime: string; // e.g. "10:00 AM"
+  endTime: string; // e.g. "07:00 PM"
+  requiredHours: number; // e.g. 8
+  workingDays: number[]; // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat (e.g. [1, 2, 3, 4, 5])
+  gracePeriodMinutes: number; // e.g. 10 mins before flagged as late
+  color?: string;
+  isDefault?: boolean;
+}
+
+export interface InternRosterAssignment {
+  internId: string;
+  internName: string;
+  avatar?: string;
+  role: string;
+  department: string;
+  batchId?: string;
+  batchName?: string;
+  shiftId: string;
+  shiftName?: string;
+  requiredHours: number;
+  customWeekends: number[]; // 0=Sun, 6=Sat, etc.
+}
+
+export type AttendanceDayStatus =
+  | "present"
+  | "absent"
+  | "on_leave"
+  | "half_day"
+  | "week_off"
+  | "holiday"
+  | "late"
+  | "punch_error"
+  | "scheduled";
+
+export interface PunchLogEntry {
+  id: string;
+  internId: string;
+  internName?: string;
+  date: string; // "YYYY-MM-DD"
+  type: "clock_in" | "clock_out";
+  timestamp: string; // ISO string
+  formattedTime: string; // e.g. "10:00:50 AM - 9/4/2026"
+  totalWorkedFormatted?: string; // e.g. "Total Worked: 24:26:21"
+  totalWorkedSeconds?: number;
+  isPunchError?: boolean;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  internId: string;
+  internName?: string;
+  date: string; // "YYYY-MM-DD"
+  status: AttendanceDayStatus;
+  clockInTime?: string; // e.g. "10:02:15 AM"
+  clockOutTime?: string; // e.g. "07:15:30 PM"
+  hoursWorked: number; // e.g. 8.2
+  requiredHours: number; // e.g. 8.0
+  shiftId: string;
+  shiftName: string;
+  isLate?: boolean;
+  isPunchError?: boolean;
+  notes?: string;
+}
+
+export interface AIReviewResult {
+  rating: number; // e.g. 4.8 / 5.0
+  summary: string;
+  velocityAssessment: "Outstanding" | "On Track" | "Needs Acceleration" | "Blocked";
+  technicalHighlights: string[];
+  blockerAdvice?: string;
+  actionableSuggestions: string[];
+  reviewedAt: string;
+}
+
+export interface DailyActivityLog {
+  id: string;
+  internId: string;
+  internName: string;
+  batchId?: string;
+  batchName?: string;
+  logType: "Daily Achievement" | "Weekly Sprint Contribution" | "Monthly Milestone" | string;
+  projectTag?: string; // Optional (removed from input form per user request)
+  description: string;
+  date: string; // e.g. "9/3/2026" or "2026-09-03"
+  createdAt: string;
+  hasBlockers: boolean;
+  blockerDescription?: string;
+
+  // Review & Rating additions:
+  status?: "pending" | "reviewed" | "approved" | "needs_revision";
+  adminFeedback?: string;
+  adminRating?: number; // 1 to 5
+  adminReviewedAt?: string;
+  adminReviewerName?: string;
+  aiReview?: AIReviewResult;
+}
+
+export interface HolidayEvent {
+  id: string;
+  name: string;
+  date: string; // "YYYY-MM-DD"
+  type: "holiday" | "event";
+}
+
+export interface LeaveRequest {
+  id: string;
+  internId: string;
+  internName: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  type: "casual" | "sick" | "academic" | "other";
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  adminReviewedAt?: string;
+  adminFeedback?: string;
+  aiRecommendation?: {
+    recommendation: "approve" | "verify" | "reject";
+    confidence: number;
+    reasoning: string;
+  };
+}
+
+// ─── AI Resume Builder & ATS Scanner Types ───
+export interface ResumeBulletFix {
+  id: string;
+  category: string;
+  scopeTag: string; // e.g. "ADD IMPACT METRIC"
+  originalText: string;
+  suggestedText: string;
+  impactReason: string;
+  applied: boolean;
+}
+
+export interface ATSScanScorecard {
+  overallScore: number; // e.g. 87
+  targetRole: string; // e.g. "Generative AI & LLM"
+  grade: string; // e.g. "Grade A • Highly Optimized"
+  lastScannedFileName: string; // e.g. "Akshar_Sai_Miryala_Resume_2026.pdf"
+  lastScannedDate: string;
+  keywordMatchRate: number; // e.g. 80
+  matchedSkills: string[];
+  missingSkills: string[];
+  quantifiedMetricsScore: number; // e.g. 88
+  quantifiedMetricsDetail: string;
+  formattingScore: number; // e.g. 96
+  formattingDetail: string;
+  grammarScore: number; // e.g. 88
+  grammarDetail: string;
+  bulletFixes: ResumeBulletFix[];
+  verificationChecklist: {
+    id: string;
+    label: string;
+    passed: boolean;
+  }[];
+  executiveSummary: string;
+}
+
+export interface InternResumeEducation {
+  id: string;
+  degree: string;
+  institution: string;
+  period: string;
+  grade?: string;
+  highlights?: string;
+}
+
+export interface InternResumeExperience {
+  id: string;
+  title: string;
+  company: string;
+  period: string;
+  location?: string;
+  bullets: string[];
+}
+
+export interface InternResumeData {
+  internId: string;
+  internName: string;
+  email: string;
+  mobile: string;
+  location: string;
+  githubUrl: string;
+  linkedinUrl: string;
+  targetRole: string;
+  professionalSummary: string;
+  education: InternResumeEducation[];
+  experience: InternResumeExperience[];
+  skills: string[];
+  certifications: string[];
+  scorecard: ATSScanScorecard;
+  isSyncedToClientPortal: boolean;
+  lastSyncedAt?: string;
+}
+
+export type NotificationType =
+  | "leave_approved"
+  | "leave_rejected"
+  | "leave_requested"
+  | "interview"
+  | "assignment"
+  | "resource"
+  | "general";
+
+export interface AppNotification {
+  id: string;
+  recipientRole: "admin" | "student" | "client" | "all";
+  recipientId?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  title: string;
+  message: string;
+  type: NotificationType;
+  timestamp: string;
+  isRead: boolean;
+  actionTab?: string;
 }
