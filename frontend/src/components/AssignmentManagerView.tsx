@@ -2261,7 +2261,7 @@ export const AssignmentManagerView: React.FC<AssignmentManagerViewProps> = ({
                         <Trophy className="w-4 h-4" />
                       </div>
                       <div className="text-base sm:text-lg font-black text-slate-900 truncate">
-                        {assignmentSubmissions[0]?.studentName || "Akshar Sai"}
+                        {assignmentSubmissions[0]?.studentName || "Top Candidate"}
                       </div>
                       <div className="text-[11px] font-bold text-amber-600 flex items-center gap-1">
                         <Star className="w-3 h-3 fill-amber-500" />

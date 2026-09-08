@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { UserRole, Student } from "../types";
 import {
@@ -32,8 +32,16 @@ import {
   AlertCircle,
   Code2,
   BookOpen,
+  Download,
+  ExternalLink,
+  UploadCloud,
+  FileUp,
+  Trash2,
+  Plus,
+  FileCheck,
 } from "lucide-react";
 import confetti from "canvas-confetti";
+import { downloadResumeFile, downloadResumePdf } from "../utils/resumeDownload";
 
 interface ProfileViewProps {
   userRole: UserRole;
@@ -50,6 +58,23 @@ const PRESET_AVATARS = [
   "https://api.dicebear.com/7.x/bottts/svg?seed=QuantumAgent",
   "https://api.dicebear.com/7.x/bottts/svg?seed=Mind2iHero",
   "https://api.dicebear.com/7.x/bottts/svg?seed=NovaCoder",
+];
+
+const POPULAR_SKILLS = [
+  "React",
+  "TypeScript",
+  "Python",
+  "Node.js",
+  "Django",
+  "FastAPI",
+  "Docker",
+  "PostgreSQL",
+  "Next.js",
+  "Tailwind CSS",
+  "LangChain",
+  "PyTorch",
+  "AWS",
+  "SQL",
 ];
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -78,6 +103,74 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       `https://api.dicebear.com/7.x/bottts/svg?seed=${currentStudent?.name || "Student"}`
   );
 
+  // Skills & Resume State
+  const [skills, setSkills] = useState<string[]>(currentStudent?.skills || []);
+  const [skillInput, setSkillInput] = useState("");
+  const [resumeUrl, setResumeUrl] = useState<string | undefined>(currentStudent?.resumeUrl);
+  const [resumeFileName, setResumeFileName] = useState<string>(
+    currentStudent?.resumeUrl ? "Candidate_Resume.pdf" : ""
+  );
+  const [resumeFileSize, setResumeFileSize] = useState<string>("");
+
+  useEffect(() => {
+    if (currentStudent) {
+      setName(currentStudent.name || "Student");
+      setMobile(currentStudent.mobile || "");
+      setCollege(currentStudent.college || "");
+      setBranch(currentStudent.branch || "");
+      setCity(currentStudent.city || "");
+      setStateValue(currentStudent.state || "");
+      if (currentStudent.bio) setBio(currentStudent.bio);
+      setGithubUrl(currentStudent.githubUrl || "");
+      setLinkedinUrl(currentStudent.linkedinUrl || "");
+      if (currentStudent.avatar) setAvatar(currentStudent.avatar);
+      setSkills(currentStudent.skills || []);
+      setResumeUrl(currentStudent.resumeUrl);
+      setResumeFileName(currentStudent.resumeUrl ? "Candidate_Resume.pdf" : "");
+    }
+  }, [currentStudent]);
+
+  const handleAddSkill = (skillToAdd: string) => {
+    const trimmed = skillToAdd.trim();
+    if (!trimmed) return;
+    if (skills.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+      setSkillInput("");
+      return;
+    }
+    setSkills((prev) => [...prev, trimmed]);
+    setSkillInput("");
+  };
+
+  const handleRemoveSkill = (skillToRemove: string) => {
+    setSkills((prev) => prev.filter((s) => s !== skillToRemove));
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage("Resume file size exceeds 10MB limit.");
+      return;
+    }
+
+    setResumeFileName(file.name);
+    setResumeFileSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setResumeUrl(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveResume = () => {
+    setResumeUrl(undefined);
+    setResumeFileName("");
+    setResumeFileSize("");
+  };
+
   // Security / Password State
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -85,8 +178,89 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
-  // Avatar Picker Modal State
+  // Avatar & Photo Upload State
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [isDraggingAvatar, setIsDraggingAvatar] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+
+  const persistAvatarChange = async (newAvatarUrl: string) => {
+    if (!currentStudent) return;
+    const updatedStudent: Student = {
+      ...currentStudent,
+      avatar: newAvatarUrl,
+    };
+    if (onUpdateStudent) {
+      onUpdateStudent(updatedStudent);
+    }
+    try {
+      await axios.patch(`/api/students/${currentStudent.id}/`, {
+        avatar: newAvatarUrl,
+      });
+      setSaveSuccessMsg("Profile photo updated successfully!");
+      try {
+        confetti({ particleCount: 35, spread: 50, origin: { y: 0.6 } });
+      } catch {}
+      setTimeout(() => setSaveSuccessMsg(null), 2000);
+    } catch (err) {
+      console.warn("Saved photo locally:", err);
+      setSaveSuccessMsg("Profile photo updated!");
+      setTimeout(() => setSaveSuccessMsg(null), 2000);
+    }
+  };
+
+  const handleImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setErrorMessage("Please select a valid image file (PNG, JPG, WebP, etc.).");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage("Image file size exceeds 10MB limit.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_DIM = 400;
+        let w = img.width;
+        let h = img.height;
+        const minDim = Math.min(w, h);
+        const sx = (w - minDim) / 2;
+        const sy = (h - minDim) / 2;
+        canvas.width = Math.min(minDim, MAX_DIM);
+        canvas.height = Math.min(minDim, MAX_DIM);
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, canvas.width, canvas.height);
+          const optimizedDataUrl = canvas.toDataURL("image/jpeg", 0.88);
+          setAvatar(optimizedDataUrl);
+          persistAvatarChange(optimizedDataUrl);
+        } else {
+          const rawDataUrl = e.target?.result as string;
+          setAvatar(rawDataUrl);
+          persistAvatarChange(rawDataUrl);
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAvatarFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImageFile(file);
+      e.target.value = "";
+    }
+  };
+
+  const handleResetAvatar = () => {
+    const defaultAv = `https://api.dicebear.com/7.x/bottts/svg?seed=${currentStudent?.name || "Student"}`;
+    setAvatar(defaultAv);
+    persistAvatarChange(defaultAv);
+  };
 
   // Status & Feedback
   const [isSaving, setIsSaving] = useState(false);
@@ -130,6 +304,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       bio: bio.trim(),
       githubUrl: githubUrl.trim(),
       linkedinUrl: linkedinUrl.trim(),
+      skills: skills,
+      resumeUrl: resumeUrl,
       password: newPassword.trim() ? newPassword.trim() : currentStudent.password,
     };
 
@@ -144,6 +320,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         state: updatedStudent.state,
         avatar: updatedStudent.avatar,
         password: updatedStudent.password,
+        bio: updatedStudent.bio,
+        githubUrl: updatedStudent.githubUrl,
+        linkedinUrl: updatedStudent.linkedinUrl,
+        skills: updatedStudent.skills,
+        resumeUrl: updatedStudent.resumeUrl,
       });
 
       if (onUpdateStudent) {
@@ -278,14 +459,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
 
               {userRole === "student" && (
-                <button
-                  type="button"
-                  onClick={() => setShowAvatarPicker(true)}
-                  className="absolute bottom-1 right-1 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg border-2 border-white transition transform hover:scale-110 cursor-pointer"
-                  title="Change Avatar"
-                >
-                  <Camera className="w-3.5 h-3.5" />
-                </button>
+                <>
+                  <input
+                    type="file"
+                    ref={avatarFileInputRef}
+                    accept="image/*"
+                    onChange={handleAvatarFileInputChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAvatarPicker(true)}
+                    className="absolute bottom-1 right-1 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg border-2 border-white transition transform hover:scale-110 cursor-pointer flex items-center justify-center group/cam"
+                    title="Upload or Change Profile Photo"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
+                </>
               )}
             </div>
 
@@ -572,6 +762,136 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Row 2: Skills & Uploaded Resume Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left: Core Technical Skills */}
+                <div className="bg-slate-50/80 rounded-2xl p-5 sm:p-6 border border-slate-200/80 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <Code2 className="w-4 h-4 text-indigo-600" />
+                      Core Technical Skills & Stack
+                    </h4>
+                    <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                      {skills.length} verified
+                    </span>
+                  </div>
+
+                  {skills.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {skills.map((skill, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3 py-1.5 rounded-xl bg-white text-xs font-bold text-slate-800 border border-slate-200/90 shadow-2xs flex items-center gap-1.5 hover:border-indigo-300 transition"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-white border border-dashed border-slate-300 text-center">
+                      <Code2 className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
+                      <p className="text-xs text-slate-500 font-medium">No skills registered yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditing(true);
+                          setActiveSubTab("edit");
+                        }}
+                        className="mt-2 text-xs font-bold text-indigo-600 hover:text-indigo-700 underline cursor-pointer"
+                      >
+                        + Add skills in Edit Profile
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Uploaded Resume / CV */}
+                <div className="bg-slate-50/80 rounded-2xl p-5 sm:p-6 border border-slate-200/80 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-emerald-600" />
+                      Candidate Resume / Curriculum Vitae
+                    </h4>
+                    {resumeUrl ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Uploaded
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200">
+                        Not Uploaded
+                      </span>
+                    )}
+                  </div>
+
+                  {resumeUrl ? (
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
+                          <FileText className="w-6 h-6" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h5 className="text-xs font-bold text-slate-900 truncate">
+                            {resumeFileName || `${name.replace(/\s+/g, '_')}_Resume.pdf`}
+                          </h5>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Official Candidate CV • Ready for ATS &amp; recruiter review
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (resumeUrl && (resumeUrl.startsWith("data:") || resumeUrl.startsWith("blob:") || resumeUrl.startsWith("http"))) {
+                              window.open(resumeUrl, "_blank");
+                            } else {
+                              downloadResumePdf(null, currentStudent || ({ name, email: currentStudent?.email || "", mobile, college, branch, city, skills, bio } as any));
+                            }
+                          }}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>View Resume</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (resumeUrl) {
+                              downloadResumeFile(resumeUrl, resumeFileName || `${name.replace(/\s+/g, '_')}_Resume.pdf`);
+                            } else {
+                              downloadResumePdf(null, currentStudent || ({ name, email: currentStudent?.email || "", mobile, college, branch, city, skills, bio } as any));
+                            }
+                            setSaveSuccessMsg("Resume downloaded successfully!");
+                            setTimeout(() => setSaveSuccessMsg(null), 2000);
+                          }}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-white border border-dashed border-slate-300 text-center">
+                      <UploadCloud className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
+                      <p className="text-xs text-slate-500 font-medium">No resume document uploaded yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditing(true);
+                          setActiveSubTab("edit");
+                        }}
+                        className="mt-2 text-xs font-bold text-indigo-600 hover:text-indigo-700 underline cursor-pointer"
+                      >
+                        Upload resume in Edit Profile
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -586,6 +906,42 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <span>{errorMessage}</span>
                 </div>
               )}
+
+              {/* Profile Photo Quick Manager in Edit Tab */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-indigo-50/40 border border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="relative w-16 h-16 rounded-2xl border-2 border-white shadow-md overflow-hidden bg-white shrink-0 ring-2 ring-indigo-500/20">
+                    <img src={avatar} alt={name} className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                      Profile Picture / Avatar
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Your photo is displayed on your candidate report, portfolio, and platform profile.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Upload Image</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAvatarPicker(true)}
+                    className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Choose Avatar</span>
+                  </button>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -720,6 +1076,145 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               </div>
 
+              {/* Technical Skills Manager */}
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  Technical Skills &amp; Competencies
+                </label>
+                
+                {/* Active Skill Pills */}
+                <div className="flex flex-wrap gap-2">
+                  {skills.map((sk) => (
+                    <span
+                      key={sk}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-bold shadow-2xs"
+                    >
+                      {sk}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSkill(sk)}
+                        className="w-4 h-4 rounded-full bg-indigo-200 hover:bg-rose-200 hover:text-rose-700 text-indigo-700 flex items-center justify-center text-xs transition cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {skills.length === 0 && (
+                    <span className="text-xs text-slate-400 italic">
+                      No skills added yet. Type below or select from popular skills.
+                    </span>
+                  )}
+                </div>
+
+                {/* Input + Add button */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={skillInput}
+                    onChange={(e) => setSkillInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddSkill(skillInput);
+                      }
+                    }}
+                    placeholder="Type skill (e.g. Next.js, Docker, PyTorch) and press Enter"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddSkill(skillInput)}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+
+                {/* Popular Quick-Select Pills */}
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 block mb-1.5">
+                    Quick Add Popular Skills:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {POPULAR_SKILLS.filter(ps => !skills.some(s => s.toLowerCase() === ps.toLowerCase())).map((ps) => (
+                      <button
+                        key={ps}
+                        type="button"
+                        onClick={() => handleAddSkill(ps)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 text-[11px] font-medium border border-slate-200/80 transition cursor-pointer"
+                      >
+                        + {ps}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Resume / CV Document Upload */}
+              <div className="pt-4 border-t border-slate-100 space-y-2">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  Candidate Resume / CV Document
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Upload your latest resume (.pdf, .doc, .docx up to 10MB) to be featured in your candidate dossier and official report.
+                </p>
+
+                {resumeUrl ? (
+                  <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                        <FileCheck className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate">
+                          {resumeFileName || "Candidate_Resume.pdf"}
+                        </p>
+                        <p className="text-[10px] text-emerald-700 font-semibold">
+                          {resumeFileSize ? `${resumeFileSize} • ` : ""}Ready for submission
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={resumeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1.5 bg-white text-indigo-600 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs font-bold"
+                        title="View Resume"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={handleRemoveResume}
+                        className="p-1.5 bg-white text-rose-600 hover:text-rose-700 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer"
+                        title="Remove Resume"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="block border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-2xl p-5 text-center cursor-pointer transition bg-slate-50/50 hover:bg-indigo-50/20">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <UploadCloud className="w-7 h-7 text-indigo-500 mx-auto mb-1.5" />
+                    <p className="text-xs font-bold text-slate-800">
+                      Click to upload or drag &amp; drop resume
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Supported formats: PDF, DOC, DOCX (Max 10MB)
+                    </p>
+                  </label>
+                )}
+              </div>
+
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
@@ -848,49 +1343,138 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
 
       {/* ========================================================= */}
-      {/* AVATAR PICKER MODAL                                       */}
+      {/* AVATAR & PHOTO UPLOADER MODAL                             */}
       {/* ========================================================= */}
       {showAvatarPicker && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                Choose Your Student Avatar
-              </h3>
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">
+                    Update Profile Photo
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Upload your own picture or select an animated avatar
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setShowAvatarPicker(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-3 py-2">
-              {PRESET_AVATARS.map((avUrl, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => {
-                    setAvatar(avUrl);
-                    setShowAvatarPicker(false);
-                  }}
-                  className={`p-2 rounded-2xl border-2 transition cursor-pointer flex items-center justify-center aspect-square ${
-                    avatar === avUrl
-                      ? "border-indigo-600 bg-indigo-50 shadow-md ring-2 ring-indigo-500/20"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  <img src={avUrl} alt={`Avatar ${i}`} className="w-full h-full object-contain" />
-                </button>
-              ))}
+            {/* Current Preview & Upload Section */}
+            <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-gradient-to-tr from-slate-50 to-indigo-50/40 border border-slate-200/80">
+              <div className="relative w-24 h-24 rounded-2xl border-2 border-white shadow-md overflow-hidden bg-white shrink-0 ring-2 ring-indigo-500/20">
+                <img src={avatar} alt="Preview" className="w-full h-full object-cover" />
+                <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] shadow">
+                  <Check className="w-3 h-3" />
+                </span>
+              </div>
+
+              <div className="flex-1 text-center sm:text-left space-y-2">
+                <div className="text-xs font-bold text-slate-800">
+                  Upload Custom Picture
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Choose a photo from your computer (PNG, JPG, WebP up to 10MB). Automatically centered and optimized.
+                </p>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Upload Image</span>
+                  </button>
+                  {avatar && (
+                    <button
+                      type="button"
+                      onClick={handleResetAvatar}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-semibold border border-slate-200 transition cursor-pointer"
+                    >
+                      Reset Default
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
+            {/* Drag & Drop Box */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDraggingAvatar(true); }}
+              onDragLeave={() => setIsDraggingAvatar(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingAvatar(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleImageFile(file);
+              }}
+              onClick={() => avatarFileInputRef.current?.click()}
+              className={`p-5 rounded-2xl border-2 border-dashed transition-all duration-200 flex flex-col items-center justify-center text-center cursor-pointer ${
+                isDraggingAvatar
+                  ? "border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20"
+                  : "border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/20 bg-slate-50/50"
+              }`}
+            >
+              <FileUp className="w-6 h-6 text-indigo-600 mb-1.5" />
+              <span className="text-xs font-bold text-slate-700">
+                Drag &amp; drop your image here, or <span className="text-indigo-600 underline">browse files</span>
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5">
+                PNG, JPG, JPEG, GIF, WebP (Max 10MB)
+              </span>
+            </div>
+
+            {/* Preset Avatars Divider & Grid */}
+            <div className="space-y-2.5 pt-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                  Or Select An Animated Avatar
+                </span>
+                <span className="text-[10px] text-slate-400">8 Presets</span>
+              </div>
+
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                {PRESET_AVATARS.map((avUrl, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setAvatar(avUrl);
+                      persistAvatarChange(avUrl);
+                    }}
+                    className={`p-1.5 rounded-xl border-2 transition cursor-pointer flex items-center justify-center aspect-square ${
+                      avatar === avUrl
+                        ? "border-indigo-600 bg-indigo-50 shadow-md ring-2 ring-indigo-500/20 scale-105"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <img src={avUrl} alt={`Avatar ${i}`} className="w-full h-full object-contain" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Live synced across your profile &amp; reports
+              </span>
               <button
                 type="button"
                 onClick={() => setShowAvatarPicker(false)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
               >
                 Done
               </button>

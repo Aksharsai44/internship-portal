@@ -31,6 +31,8 @@ import {
   ChevronDown,
   Info,
   CheckCircle2,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { Minda2Logo } from "./Minda2Logo";
@@ -297,10 +299,22 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
     setDeletingBatch(null);
   };
 
+  const handleToggleLockBatch = (b: Batch) => {
+    const updated: Batch = { ...b, isLocked: !b.isLocked };
+    if (onUpdateBatch) {
+      onUpdateBatch(updated);
+    }
+  };
+
   // Handlers for Student Registration
   const handleManualAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualName.trim() || !manualEmail.trim()) return;
+
+    if (selectedBatch.isLocked) {
+      alert(`Cohort "${selectedBatch.name}" is locked. Adding interns is currently disabled.`);
+      return;
+    }
 
     onAddStudent({
       name: manualName,
@@ -358,6 +372,12 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
 
   const handleProcessCsvSubmit = () => {
     if (!csvContent) return;
+
+    if (selectedBatch.isLocked) {
+      alert(`Cohort "${selectedBatch.name}" is locked. Adding interns is currently disabled.`);
+      return;
+    }
+
     const lines = csvContent.split("\n").filter((l) => l.trim().length > 0);
     const rows = lines.slice(1);
 
@@ -509,10 +529,10 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
             >
               <div>
                 {/* Header Tags & Action Shortcuts */}
-                <div className="flex items-center justify-between mb-2.5 gap-2">
-                  <div className="flex items-center gap-1.5">
+                <div className="flex items-center justify-between mb-2.5 gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span
-                      className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+                      className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border flex items-center gap-1 shrink-0 ${
                         b.type === "workshop"
                           ? "bg-amber-50 text-amber-700 border-amber-200"
                           : "bg-sky-50 text-sky-700 border-sky-200"
@@ -521,13 +541,13 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
                       <span>{b.type === "workshop" ? "⚡" : "🚀"}</span>
                       <span>{b.type}</span>
                     </span>
-                    <span className="text-[11px] font-bold text-slate-500">
+                    <span className="text-[11px] font-bold text-slate-500 truncate">
                       {b.durationLabel}
                     </span>
                   </div>
 
-                  {/* Batch Card Actions (QR, Edit, Delete) */}
-                  <div className="flex items-center gap-1">
+                  {/* Batch Card Actions (QR, Lock, Edit, Delete) */}
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -535,10 +555,34 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
                         onSelectBatch(b);
                         setQrModalBatch(b);
                       }}
-                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-sky-100 text-slate-600 hover:text-sky-700 transition"
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-sky-100 text-slate-600 hover:text-sky-700 transition shrink-0"
                       title="View & Download QR Code"
                     >
                       <QrCode className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleLockBatch(b);
+                      }}
+                      className={`p-1.5 rounded-lg transition shrink-0 ${
+                        b.isLocked
+                          ? "bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 shadow-2xs"
+                          : "bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900"
+                      }`}
+                      title={
+                        b.isLocked
+                          ? "Batch is Locked (Registration closed) - Click to Unlock"
+                          : "Lock Batch (Close registration & intern additions)"
+                      }
+                    >
+                      {b.isLocked ? (
+                        <Lock className="w-3.5 h-3.5 text-rose-600" />
+                      ) : (
+                        <Unlock className="w-3.5 h-3.5 text-slate-500" />
+                      )}
                     </button>
 
                     <button
@@ -549,7 +593,7 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
                         setEditBatchCloneId("none");
                         setEditBatchAssignmentsCloneId("none");
                       }}
-                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition"
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition shrink-0"
                       title="Update / Edit Batch Details"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -562,7 +606,7 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
                         setDeletingBatch(b);
                       }}
                       disabled={batches.length <= 1}
-                      className={`p-1.5 rounded-lg transition ${
+                      className={`p-1.5 rounded-lg transition shrink-0 ${
                         batches.length <= 1
                           ? "opacity-30 cursor-not-allowed bg-slate-100 text-slate-400"
                           : "bg-rose-50 hover:bg-rose-100 text-rose-600"
@@ -597,21 +641,32 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400 font-medium">
-                      Registration Code:
+                      Registration:
                     </span>
-                    <span className="font-mono font-black text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100">
-                      {b.registrationCode || `M2I-${b.id.slice(0, 4)}`}
-                    </span>
+                    {b.isLocked ? (
+                      <span className="font-mono font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[10px] flex items-center gap-1">
+                        <Lock className="w-2.5 h-2.5 text-rose-600" /> Closed
+                      </span>
+                    ) : (
+                      <span className="font-mono font-black text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100">
+                        {b.registrationCode || `M2I-${b.id.slice(0, 4)}`}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Bottom Card Footer: Count & Active Selector */}
               <div className="flex items-center justify-between text-xs font-bold text-slate-600 pt-3 border-t border-slate-200/60">
-                <span className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-sky-600" />
                   <span>{studentCount} Students</span>
-                </span>
+                  {b.isLocked && (
+                    <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-200 flex items-center gap-0.5 ml-1">
+                      <Lock className="w-2.5 h-2.5" /> Closed
+                    </span>
+                  )}
+                </div>
 
                 <button
                   type="button"
@@ -694,8 +749,17 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
 
             {/* Upload CSV */}
             <button
-              onClick={() => setShowCsvModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition border border-slate-200 cursor-pointer"
+              disabled={selectedBatch.isLocked}
+              onClick={() => {
+                if (selectedBatch.isLocked) return;
+                setShowCsvModal(true);
+              }}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition border ${
+                selectedBatch.isLocked
+                  ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 cursor-pointer"
+              }`}
+              title={selectedBatch.isLocked ? "Cannot upload CSV: Cohort is locked" : "Upload CSV"}
             >
               <Upload className="w-4 h-4" />
               <span>Upload CSV</span>
@@ -703,11 +767,20 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
 
             {/* Manual Add User */}
             <button
-              onClick={() => setShowAddStudentModal(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+              disabled={selectedBatch.isLocked}
+              onClick={() => {
+                if (selectedBatch.isLocked) return;
+                setShowAddStudentModal(true);
+              }}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm ${
+                selectedBatch.isLocked
+                  ? "bg-slate-200 text-slate-400 cursor-not-allowed opacity-60"
+                  : "bg-sky-500 hover:bg-sky-600 text-white cursor-pointer"
+              }`}
+              title={selectedBatch.isLocked ? "Cannot add student: Cohort is locked" : "Add Student"}
             >
-              <UserPlus className="w-4 h-4" />
-              <span>Add Student</span>
+              {selectedBatch.isLocked ? <Lock className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+              <span>{selectedBatch.isLocked ? "Batch Locked" : "Add Student"}</span>
             </button>
 
             {/* Download Roster CSV */}
@@ -720,6 +793,31 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Lock Warning Banner */}
+        {selectedBatch.isLocked && (
+          <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-rose-700 animate-in fade-in">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0">
+                <Lock className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-black text-rose-900">Cohort Locked — Registration & Student Additions Disabled</p>
+                <p className="text-[11px] text-rose-600 font-medium">
+                  This batch is locked. Intern self-registration and manual intern additions are closed. Click Unlock to re-open registration.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleLockBatch(selectedBatch)}
+              className="px-3.5 py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer flex items-center justify-center gap-1.5 flex-shrink-0"
+            >
+              <Unlock className="w-3.5 h-3.5 text-rose-600" />
+              <span>Unlock Batch</span>
+            </button>
+          </div>
+        )}
 
         {/* Student Roster Table */}
         <div className="overflow-x-auto rounded-2xl border border-slate-100">
@@ -1286,6 +1384,27 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
                   </p>
                 </div>
 
+                {/* Batch Locked Toggle */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-2 rounded-lg ${editingBatch.isLocked ? "bg-rose-100 text-rose-600" : "bg-slate-200 text-slate-500"}`}>
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">Lock Cohort Registration</span>
+                      <span className="text-[10px] text-slate-500">
+                        When locked, student self-registration and manual intern additions are closed.
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={!!editingBatch.isLocked}
+                    onChange={(e) => setEditingBatch({ ...editingBatch, isLocked: e.target.checked })}
+                    className="w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500 cursor-pointer"
+                  />
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1 mt-6">
                     <Copy className="w-3.5 h-3.5" /> Clone Additional Content
@@ -1491,6 +1610,13 @@ export const BatchManagementView: React.FC<BatchManagementViewProps> = ({
                     `M2I-${currentQrBatch.id.slice(0, 4)}`}
                 </span>
               </div>
+
+              {currentQrBatch.isLocked && (
+                <div className="p-2 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-center text-[10px] font-bold flex items-center justify-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 flex-shrink-0 text-rose-600" />
+                  <span>Registration is currently closed (Cohort Locked)</span>
+                </div>
+              )}
 
               {/* Host Target Selector for Mobile vs Localhost */}
               <div className="p-1 bg-slate-50 rounded-lg border border-slate-200 text-[9px] text-left">

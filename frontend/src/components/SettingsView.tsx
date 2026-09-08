@@ -1643,7 +1643,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="text"
                   value={meetingInstructor}
                   onChange={(e) => setMeetingInstructor(e.target.value)}
-                  placeholder="e.g. Dr. Vikram Aditya & Akshar Sai"
+                  placeholder="e.g. Dr. Vikram Aditya & Lead Instructor"
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm"
                 />
               </div>

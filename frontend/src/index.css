@@ -284,25 +284,75 @@
 /* Candidate Report — Print / PDF Export Styles  */
 /* ============================================= */
 @media print {
-  /* Hide all app chrome, mock video players, and print-hidden elements */
-  header, nav, aside, .print\:hidden, [data-print-hidden], .aspect-video {
+  /* Hide all app chrome, mock video players, interactive controls, and print-hidden elements */
+  header, nav, aside, .print\:hidden, [data-print-hidden], .aspect-video, [role="navigation"] {
     display: none !important;
   }
 
-  /* When candidate report modal is open, ensure background app content is completely hidden */
-  body:has(#candidate-report-modal) #app-main-layout,
-  body:has(#candidate-report-modal) .app-main-layout,
-  body:has(#candidate-report-modal) main:not(#candidate-report-main) {
+  /* 
+   * CRITICAL FIX FOR TAB MODE (INTERN PORTAL) & MODAL MODE:
+   * Keep candidate report ancestors visible in full-width block mode.
+   */
+  body:has(#candidate-report-modal) #app-main-layout:has(#candidate-report-modal),
+  body:has(#candidate-report-modal) .app-main-layout:has(#candidate-report-modal),
+  body:has(#candidate-report-modal) main:has(#candidate-report-modal),
+  body.candidate-report-open #app-main-layout:has(#candidate-report-modal),
+  body.candidate-report-open main:has(#candidate-report-modal) {
+    display: block !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide outside app layout if it does NOT contain the report modal (e.g. in Modal Mode) */
+  body:has(#candidate-report-modal) #app-main-layout:not(:has(#candidate-report-modal)),
+  body:has(#candidate-report-modal) .app-main-layout:not(:has(#candidate-report-modal)),
+  body:has(#candidate-report-modal) main:not(:has(#candidate-report-modal)):not(#candidate-report-main),
+  body.candidate-report-open #app-main-layout:not(:has(#candidate-report-modal)),
+  body.candidate-report-open main:not(:has(#candidate-report-modal)):not(#candidate-report-main) {
     display: none !important;
   }
 
+  /* Any container wrapping #candidate-report-modal inside main */
+  main:has(#candidate-report-modal) > div,
+  main:has(#candidate-report-modal) .max-w-7xl,
+  body.candidate-report-open main > div {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Candidate report modal container: must be full width, non-fixed, fully visible */
   #candidate-report-modal {
     display: block !important;
     position: static !important;
     width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  #candidate-report-modal > div,
+  #candidate-report-modal .min-h-screen {
+    min-height: auto !important;
     height: auto !important;
     overflow: visible !important;
-    background: white !important;
+    background: #ffffff !important;
     padding: 0 !important;
     margin: 0 !important;
   }
@@ -310,6 +360,10 @@
   #candidate-report-main {
     display: block !important;
     width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   /* Explicit print grid rules for clean document structure */
@@ -329,10 +383,13 @@
     width: 100% !important;
   }
 
-  /* Reset body */
-  body {
+  /* Reset body and html for multi-page print flow */
+  html, body {
     background: white !important;
     color: #0f172a !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -435,6 +492,130 @@
     margin-top: 0.5rem !important;
   }
 
+  /* ============================================================= */
+  /* Simple Report (Executive Briefing) Print & Gap Optimizations  */
+  /* ============================================================= */
+  .simple-report-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+  .simple-report-container > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.35rem !important;
+  }
+
+  .simple-report-banner {
+    width: 100% !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 0.35rem !important;
+  }
+
+  .simple-report-pillars {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0.35rem !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 0.35rem !important;
+  }
+
+  .simple-report-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.35rem !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+    width: 100% !important;
+  }
+
+  .simple-report-card {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin: 0 !important;
+    padding: 0.45rem 0.55rem !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 0.5rem !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+    contain: paint !important;
+    position: relative !important;
+  }
+
+  .simple-report-card svg {
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .simple-report-summary {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-top: 0.5rem !important;
+    padding: 0.65rem 0.75rem !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 0.625rem !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+  }
+
+  /* Candidate Hero Header & Cumulative Score Pinned Right in Print */
+  .candidate-hero-header {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 0.75rem !important;
+    width: 100% !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .candidate-hero-right {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    text-align: right !important;
+    margin-left: auto !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* High-contrast dark text in print & exported PDF */
+  #candidate-report-main,
+  #candidate-report-modal,
+  .simple-report-container,
+  .simple-report-card,
+  .candidate-hero-header {
+    color: #0f172a !important;
+  }
+
+  #candidate-report-main .text-slate-300,
+  #candidate-report-main .text-slate-400,
+  #candidate-report-main .text-slate-500,
+  #candidate-report-main .text-slate-600,
+  #candidate-report-main .text-gray-400,
+  #candidate-report-main .text-gray-500,
+  #candidate-report-main .text-gray-600,
+  .simple-report-container .text-slate-300,
+  .simple-report-container .text-slate-400,
+  .simple-report-container .text-slate-500,
+  .simple-report-container .text-slate-600,
+  .simple-report-card .text-slate-400,
+  .simple-report-card .text-slate-500,
+  .simple-report-card .text-slate-600,
+  .print\:text-slate-400,
+  .print\:text-slate-500,
+  .print\:text-slate-600,
+  .print\:text-slate-700 {
+    color: #0f172a !important;
+  }
+
   /* Preserve chart SVG colors and backgrounds */
   * {
     -webkit-print-color-adjust: exact !important;
@@ -457,3 +638,38 @@
     max-height: none !important;
   }
 }
+
+/* ========================================================================= */
+/* HIGH-CONTRAST DARK TEXT FOR CANDIDATE REPORTS (Screen Mode)               */
+/* Eliminates washed-out gray text so labels and metrics are clearly readable*/
+/* ========================================================================= */
+#candidate-report-main .bg-white .text-slate-400,
+#candidate-report-main .bg-slate-50 .text-slate-400,
+#candidate-report-modal .bg-white .text-slate-400,
+#candidate-report-modal .bg-slate-50 .text-slate-400,
+.simple-report-container .bg-white .text-slate-400,
+.simple-report-container .bg-slate-50 .text-slate-400,
+.simple-report-card .text-slate-400 {
+  color: #334155; /* Dark Slate 700 */
+}
+
+#candidate-report-main .bg-white .text-slate-500,
+#candidate-report-main .bg-slate-50 .text-slate-500,
+#candidate-report-modal .bg-white .text-slate-500,
+#candidate-report-modal .bg-slate-50 .text-slate-500,
+.simple-report-container .bg-white .text-slate-500,
+.simple-report-container .bg-slate-50 .text-slate-500,
+.simple-report-card .text-slate-500 {
+  color: #1e293b; /* Dark Slate 800 */
+}
+
+#candidate-report-main .bg-white .text-slate-600,
+#candidate-report-main .bg-slate-50 .text-slate-600,
+#candidate-report-modal .bg-white .text-slate-600,
+#candidate-report-modal .bg-slate-50 .text-slate-600,
+.simple-report-container .bg-white .text-slate-600,
+.simple-report-container .bg-slate-50 .text-slate-600,
+.simple-report-card .text-slate-600 {
+  color: #0f172a; /* Deep Slate 900 */
+}
+

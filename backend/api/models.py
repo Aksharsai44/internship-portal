@@ -17,6 +17,7 @@ class Batch(models.Model):
     description = models.TextField(blank=True, null=True)
     technologies = models.JSONField(default=list, blank=True)  # list of tech/skill tags for this cohort
     mentor = models.CharField(max_length=255, blank=True, default='')
+    isLocked = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -29,7 +30,7 @@ class Student(models.Model):
     email = models.EmailField()
     mobile = models.CharField(max_length=20)
     batch = models.ForeignKey(Batch, on_delete=models.CASCADE, related_name='students')
-    avatar = models.URLField(blank=True, null=True)
+    avatar = models.TextField(blank=True, null=True)
     college = models.CharField(max_length=255, blank=True, null=True)
     branch = models.CharField(max_length=100, blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)

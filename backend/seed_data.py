@@ -27,14 +27,14 @@ if not batch1:
         status="active",
         description="Comprehensive 6-month full-stack internship covering FastAPI, React 19, PostgreSQL, Docker, and distributed microservices.",
         technologies=["Python", "FastAPI", "React", "PostgreSQL", "Docker", "TailwindCSS"],
-        mentor="Dr. S. K. Sharma (Lead Architect)"
+        mentor="Vijaya Kumar Mekala"
     )
 else:
     batch1.name = "Python Full-Stack & Cloud Architecture"
     batch1.durationLabel = "6 Months"
     batch1.durationMonths = 6
     batch1.technologies = ["Python", "FastAPI", "React", "PostgreSQL", "Docker", "TailwindCSS"]
-    batch1.mentor = "Dr. S. K. Sharma (Lead Architect)"
+    batch1.mentor = "Vijaya Kumar Mekala"
     batch1.college = "BVRIT / JNTU Hyderabad"
     batch1.save()
 

@@ -2,12 +2,12 @@ import { InternResumeData } from "../types";
 
 export const INITIAL_RESUME_DATA: InternResumeData = {
   internId: "intern_01",
-  internName: "Akshar Sai Miryala",
-  email: "aksharsai.miryala@mind2i.edu",
+  internName: "Candidate Intern",
+  email: "candidate@mind2i.edu",
   mobile: "+91 98765 43210",
   location: "Hyderabad, India",
-  githubUrl: "github.com/aksharsai",
-  linkedinUrl: "linkedin.com/in/aksharsai",
+  githubUrl: "github.com/candidate",
+  linkedinUrl: "linkedin.com/in/candidate",
   targetRole: "Generative AI & LLM",
   professionalSummary:
     "High-velocity Full-Stack Generative AI & Systems Engineer with deep expertise in asynchronous distributed backends, LLM agent orchestrations (LangChain, RAG, Vector Embeddings), and production React/Next.js architectures. Demonstrated track record of optimizing sub-second compiler latency, architecting sandboxed container runtimes, and driving 35%+ throughput improvements.",
@@ -82,7 +82,7 @@ export const INITIAL_RESUME_DATA: InternResumeData = {
     overallScore: 87,
     targetRole: "Generative AI & LLM",
     grade: "Grade A • Highly Optimized",
-    lastScannedFileName: "Akshar_Sai_Miryala_Resume_2026.pdf",
+    lastScannedFileName: "Candidate_Resume_2026.pdf",
     lastScannedDate: "2026-09-07",
     keywordMatchRate: 80,
     matchedSkills: ["LangChain", "RAG", "Vector Embeddings", "FastAPI", "Python", "PyTorch", "Next.js", "Docker"],
@@ -136,7 +136,7 @@ export const INITIAL_RESUME_DATA: InternResumeData = {
       },
     ],
     executiveSummary:
-      "Analysis of Akshar Sai Miryala's resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements (35% UI gain, 42% latency reduction) position him in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.",
+      "Analysis of the candidate's resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements (35% UI gain, 42% latency reduction) position the candidate in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.",
   },
   isSyncedToClientPortal: true,
   lastSyncedAt: "2026-09-07T00:30:00",

@@ -64,6 +64,7 @@ import { CertificateManagerView } from "./components/CertificateManagerView";
 import { SettingsView } from "./components/SettingsView";
 import LandingView from "./components/LandingView";
 import LoginModal from "./components/LoginModal";
+import { BatchRegistrationModal } from "./components/BatchRegistrationModal";
 import { StudentDashboardView } from "./components/StudentDashboardView";
 import { CandidateReportView } from "./components/CandidateReportView";
 import { ClientDashboardView } from "./components/ClientDashboardView";
@@ -359,6 +360,28 @@ export default function App() {
     } catch {}
   }, [resumeData]);
 
+  // Synchronize resumeData with the current student so other names never bleed through
+  useEffect(() => {
+    if (currentStudent && userRole === "student") {
+      setResumeData((prev) => ({
+        ...prev,
+        internId: currentStudent.id,
+        internName: currentStudent.name,
+        email: currentStudent.email || prev.email,
+        mobile: currentStudent.mobile || prev.mobile,
+        location: currentStudent.city ? `${currentStudent.city}, ${currentStudent.state || "India"}` : (currentStudent.college || prev.location),
+        githubUrl: currentStudent.githubUrl || (prev.githubUrl && !prev.githubUrl.includes("aksharsai") ? prev.githubUrl : `github.com/${currentStudent.name.toLowerCase().replace(/\s+/g, "")}`),
+        linkedinUrl: currentStudent.linkedinUrl || (prev.linkedinUrl && !prev.linkedinUrl.includes("aksharsai") ? prev.linkedinUrl : `linkedin.com/in/${currentStudent.name.toLowerCase().replace(/\s+/g, "")}`),
+        skills: currentStudent.skills && currentStudent.skills.length > 0 ? currentStudent.skills : prev.skills,
+        scorecard: {
+          ...prev.scorecard,
+          lastScannedFileName: `${currentStudent.name.replace(/\s+/g, "_")}_Resume.pdf`,
+          executiveSummary: `Analysis of ${currentStudent.name}'s resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements position ${currentStudent.name} in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.`,
+        },
+      }));
+    }
+  }, [currentStudent?.id, currentStudent?.name, userRole]);
+
   // Auto-sync students from batches into roster assignments
   useEffect(() => {
     if (students && students.length > 0) {
@@ -581,10 +604,25 @@ export default function App() {
 
   // Modals
   const [inspectedStudent, setInspectedStudent] = useState<Student | null>(null);
+  const [selfRegisterBatch, setSelfRegisterBatch] = useState<Batch | null>(null);
 
   // Interview Request Modal
   const [interviewModalIntern, setInterviewModalIntern] = useState<Student | null>(null);
   const [interviewNote, setInterviewNote] = useState("");
+
+  // Check URL for registration link (?register=1&batch=batch_id)
+  useEffect(() => {
+    if (batches.length > 0) {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get("register") === "1") {
+        const batchParam = urlParams.get("batch");
+        const found = batches.find((b) => b.id === batchParam) || batches[0];
+        if (found) {
+          setSelfRegisterBatch(found);
+        }
+      }
+    }
+  }, [batches]);
 
   // Fetch real data from Django backend
   useEffect(() => {
@@ -811,6 +849,10 @@ export default function App() {
   // Handlers
   const handleAddStudent = (newStudent: Partial<Student>) => {
     const targetBatch = (newStudent.batchId ? batches.find((b) => b.id === newStudent.batchId) : null) || selectedBatch;
+    if (targetBatch?.isLocked) {
+      alert(`Cannot register or add intern: Cohort "${targetBatch.name}" is locked and registration is closed.`);
+      return;
+    }
     const targetBatchId = newStudent.batchId || targetBatch?.id || "batch_default";
     const targetBatchName = newStudent.batchName || targetBatch?.name || "Internship Cohort";
     const targetCollege = newStudent.college || targetBatch?.college || "";
@@ -843,6 +885,9 @@ export default function App() {
       attendedSessions: 0,
       totalSessions: 0,
       skills: newStudent.skills || [],
+      resumeUrl: newStudent.resumeUrl || "",
+      githubUrl: newStudent.githubUrl || "",
+      linkedinUrl: newStudent.linkedinUrl || "",
       bio: newStudent.bio || "",
     };
     setStudents((prev) => [fullStudent, ...prev.filter((s) => s.email !== fullStudent.email)]);
@@ -859,6 +904,10 @@ export default function App() {
   };
 
   const handleBulkAddStudents = (newStudents: Partial<Student>[]) => {
+    if (selectedBatch?.isLocked) {
+      alert(`Cannot add interns: Cohort "${selectedBatch.name}" is locked and registration is closed.`);
+      return;
+    }
     const fullList: Student[] = newStudents.map((s, idx) => ({
       id: `stu_bulk_${Date.now()}_${idx}`,
       name: s.name || `Intern ${idx + 1}`,
@@ -961,7 +1010,7 @@ export default function App() {
     setCurrentStudent(updatedStudent);
     setStudents((prev) => prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s)));
     if (loggedInUser && loggedInUser.email === updatedStudent.email) {
-      setLoggedInUser({ ...loggedInUser, name: updatedStudent.name });
+      setLoggedInUser({ ...loggedInUser, name: updatedStudent.name, avatar: updatedStudent.avatar });
     }
   };
 
@@ -1275,18 +1324,6 @@ export default function App() {
       id: "interviews",
       label: "Interview Requests",
       icon: Calendar,
-      badgeText:
-        interviewRequests.filter(
-          (r) => r.clientId === currentClient?.id && r.status === "scheduled"
-        ).length > 0
-          ? interviewRequests
-              .filter(
-                (r) =>
-                  r.clientId === currentClient?.id && r.status === "scheduled"
-              )
-              .length.toString()
-          : undefined,
-      badgeType: "teal",
     },
   ];
 
@@ -1339,6 +1376,55 @@ export default function App() {
                 setCurrentClient(user);
               }
             }}
+          />
+        )}
+        {selfRegisterBatch && (
+          <BatchRegistrationModal
+            batch={selfRegisterBatch}
+            existingStudents={students}
+            onRegisterStudent={handleAddStudent}
+            onAutoLogin={(newStudent) => {
+              setIsAuthenticated(true);
+              setUserRole("student");
+              setLoggedInUser({
+                email: newStudent.email || "",
+                name: newStudent.name || "Student",
+                role: "student",
+              });
+              const foundStu = students.find(s => s.email === newStudent.email);
+              const stu: Student = foundStu
+                ? { ...foundStu, ...newStudent, skills: newStudent.skills || foundStu.skills || [] }
+                : ({
+                    id: `stu_${Date.now()}`,
+                    name: newStudent.name || "Student",
+                    email: newStudent.email || "",
+                    mobile: newStudent.mobile || "",
+                    college: newStudent.college || "",
+                    branch: newStudent.branch || "",
+                    city: newStudent.city || "",
+                    state: newStudent.state || "",
+                    batchId: newStudent.batchId || "",
+                    batchName: newStudent.batchName || "",
+                    enrolledAt: new Date().toISOString(),
+                    status: "active",
+                    scores: { quizScore: 0, codingScore: 0, liveQAScore: 0, assignmentScore: 0, overallAccuracy: 0 },
+                    totalPoints: 0,
+                    activeStreakDays: 0,
+                    fastestResponseMs: 0,
+                    attendedSessions: 0,
+                    totalSessions: 0,
+                    skills: newStudent.skills || [],
+                    resumeUrl: newStudent.resumeUrl || "",
+                    githubUrl: newStudent.githubUrl || "",
+                    linkedinUrl: newStudent.linkedinUrl || "",
+                    bio: newStudent.bio || "",
+                  } as Student);
+              setCurrentStudent(stu);
+              const b = batches.find(x => x.id === stu.batchId);
+              if (b) setSelectedBatch(b);
+              setSelfRegisterBatch(null);
+            }}
+            onClose={() => setSelfRegisterBatch(null)}
           />
         )}
       </>
@@ -1507,11 +1593,6 @@ export default function App() {
                         </span>
                       )
                     )}
-                    {item.id === "interviews" && userRole === "admin" && interviewRequests.filter(r => r.status === "pending").length > 0 && (
-                      <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center flex-shrink-0">
-                        {interviewRequests.filter(r => r.status === "pending").length}
-                      </span>
-                    )}
                   </button>
                 );
               })}
@@ -1614,7 +1695,10 @@ export default function App() {
                 students={students} onAddStudent={handleAddStudent} onBulkAddStudents={handleBulkAddStudents}
                 onEditStudent={handleEditStudent} onDeleteStudent={handleDeleteStudent}
                 onViewStudentDetails={(s) => setInspectedStudent(s)}
-                onOpenSelfRegisterPortal={() => {}}
+                onOpenSelfRegisterPortal={(batchId) => {
+                  const b = batches.find((x) => x.id === batchId) || selectedBatch;
+                  setSelfRegisterBatch(b);
+                }}
               />
             )}
 
@@ -2018,6 +2102,16 @@ export default function App() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+
+        {/* Self-Registration Modal (Admin Preview or Authenticated Trigger) */}
+        {selfRegisterBatch && (
+          <BatchRegistrationModal
+            batch={selfRegisterBatch}
+            existingStudents={students}
+            onRegisterStudent={handleAddStudent}
+            onClose={() => setSelfRegisterBatch(null)}
+          />
         )}
       </AnimatePresence>
     </div>

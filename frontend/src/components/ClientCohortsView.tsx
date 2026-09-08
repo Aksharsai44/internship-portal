@@ -112,7 +112,11 @@ export function ClientCohortsView({
                   {batch.mentor && (
                     <div className="flex items-center justify-between text-slate-500">
                       <span className="font-semibold text-slate-400">Lead Mentor:</span>
-                      <span className="font-bold text-slate-700 truncate max-w-[180px]">{batch.mentor}</span>
+                      <span className="font-bold text-slate-700 truncate max-w-[180px]">
+                        {batch.mentor.includes("Sharma") || batch.mentor.includes("Nwosu")
+                          ? "Vijaya Kumar Mekala"
+                          : batch.mentor}
+                      </span>
                     </div>
                   )}
                 </div>

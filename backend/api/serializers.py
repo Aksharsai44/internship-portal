@@ -31,6 +31,7 @@ class StudentSerializer(serializers.ModelSerializer):
     batchName = serializers.CharField(source='batch.name', read_only=True)
     batchId = serializers.CharField(source='batch.id', read_only=True, required=False, allow_null=True)
     batch = serializers.PrimaryKeyRelatedField(queryset=Batch.objects.all(), required=False, allow_null=True)
+    avatar = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Student
@@ -50,6 +51,19 @@ class StudentSerializer(serializers.ModelSerializer):
                 'overallAccuracy': 0.0
             }
         return ret
+
+    def validate(self, attrs):
+        if not self.instance:
+            batch = attrs.get('batch')
+            batch_id = self.initial_data.get('batchId') or self.initial_data.get('batch')
+            if not batch and batch_id:
+                try:
+                    batch = Batch.objects.get(id=batch_id)
+                except Batch.DoesNotExist:
+                    pass
+            if batch and getattr(batch, 'isLocked', False):
+                raise serializers.ValidationError({"error": f"Registration for cohort '{batch.name}' has been closed."})
+        return attrs
 
     def create(self, validated_data):
         scores_data = validated_data.pop('scores', None)

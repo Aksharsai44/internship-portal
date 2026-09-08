@@ -48,6 +48,9 @@ import {
   INITIAL_LEAVE_REQUESTS,
 } from "../data/attendanceData";
 import { INITIAL_RESUME_DATA } from "../data/mockResumeData";
+import { CandidateSimpleReportView } from "./CandidateSimpleReportView";
+import { getScoreColorTheme } from "../utils/scoreColorUtils";
+import { downloadResumePdf, exportCandidateCsv } from "../utils/resumeDownload";
 
 // ─── Types ───
 interface CandidateReportViewProps {
@@ -113,7 +116,10 @@ function generateReportData(
   preset: DatePreset,
   customStartDate?: string,
   customEndDate?: string,
-  studentBatch?: Batch | null
+  studentBatch?: Batch | null,
+  resumeData?: InternResumeData,
+  submissions?: ProjectSubmission[],
+  projects?: ProjectAssignment[]
 ) {
   const baseAccuracy = student.scores?.overallAccuracy || 86;
   const baseQuiz = student.scores?.quizScore || 82;
@@ -316,8 +322,116 @@ function generateReportData(
     { subject: "Adaptability", score: Math.round(90 * multiplier), fullMark: 100 },
   ];
 
+  // ─── 12 Evaluation Domains Calculation for Holistic Cumulative Score ───
+  // 01. Scheduled Assessments & Examination Scoring
+  const m1_assessments = Math.min(100, Math.max(0, Math.round((student.scores?.assignmentScore || student.scores?.overallAccuracy || 92) * multiplier)));
+  // 02. Cohort Live Q&A, Polls & Rapid Reflex Telemetry
+  const m2_liveQA = Math.min(100, Math.max(0, Math.round((student.scores?.liveQAScore || student.scores?.overallAccuracy || 96) * multiplier)));
+  // 03. LearnHub Knowledge Modules & Concept Quizzes
+  const m3_learnHub = Math.min(100, Math.max(0, Math.round((student.scores?.quizScore || 94) * multiplier)));
+  // 04. Coding Challenges & Compiler Execution Benchmarks
+  const m4_coding = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round(
+        codingChallenges.reduce((acc, c) => acc + c.value, 0) / Math.max(1, codingChallenges.length)
+      )
+    )
+  );
+  // 05. Attendance, Training & Daily Activity
+  const m5_attendance = Math.min(100, Math.max(0, Math.round(attendanceRate * (preset === "7d" ? 0.98 : 1.0))));
+  // 06. Project Execution & Tech Stack Research
+  const m6_techStack = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round(
+        techStack.reduce((acc, t) => acc + t.proficiency, 0) / Math.max(1, techStack.length)
+      )
+    )
+  );
+  // 07. Skills Matrix & Industry Fit
+  const m7_skillsMatrix = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round(
+        skillsMatrix.reduce((acc, s) => acc + s.demonstrated, 0) / Math.max(1, skillsMatrix.length)
+      )
+    )
+  );
+  // 08. Interactive Resume Showcase & Deep ATS Scorecard
+  const m8_atsResume = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round((resumeData?.scorecard?.overallScore || 88) * multiplier)
+    )
+  );
+  // 09. Project Presentation & Resources Hub
+  const m9_presentation = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round(
+        presentationScores.reduce((acc, p) => acc + p.score, 0) / Math.max(1, presentationScores.length)
+      )
+    )
+  );
+  // 10. Video Portfolio & Candidate Self-Reflection & Communication
+  const m10_communication = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round(
+        communicationSkills.reduce((acc, c) => acc + c.score, 0) / Math.max(1, communicationSkills.length)
+      )
+    )
+  );
+  // 11. Assigned Projects & Engineering Deliverables Portfolio (Submissions)
+  let m11_capstones = Math.min(100, Math.round(95 * multiplier));
+  if (submissions && submissions.length > 0 && projects && projects.length > 0) {
+    const candidateSubs = submissions.filter((s) => s.studentId === student.id);
+    const submittedRate = Math.min(1, candidateSubs.length / Math.max(1, projects.length));
+    const passedSubs = candidateSubs.filter((s) => s.status === "passed" || ((s.gradePoints ?? 0) >= 80)).length;
+    const passedRate = candidateSubs.length > 0 ? passedSubs / candidateSubs.length : 1;
+    m11_capstones = Math.min(100, Math.max(70, Math.round((submittedRate * 50 + passedRate * 50) * multiplier)));
+  }
+  // 12. Final Evaluation & Comprehensive Behavioral Review
+  const m12_behavioral = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round(
+        softSkills.reduce((acc, s) => acc + s.score, 0) / Math.max(1, softSkills.length)
+      )
+    )
+  );
+
+  const twelveModuleScores = [
+    { id: "01", name: "Scheduled Assessments", score: m1_assessments, grade: m1_assessments >= 90 ? "Distinction A+" : m1_assessments >= 80 ? "Grade A" : "Grade B" },
+    { id: "02", name: "Live Q&A & Reflex", score: m2_liveQA, grade: m2_liveQA >= 90 ? "Top 5% Reflex" : "Proficient" },
+    { id: "03", name: "LearnHub Modules", score: m3_learnHub, grade: m3_learnHub >= 90 ? "100% Cleared" : "In Progress" },
+    { id: "04", name: "Coding Challenges", score: m4_coding, grade: m4_coding >= 90 ? "Benchmark Pass" : "Verified" },
+    { id: "05", name: "Attendance & Activity", score: m5_attendance, grade: m5_attendance >= 90 ? "Exemplary" : "Good Standing" },
+    { id: "06", name: "Project Execution & Tech", score: m6_techStack, grade: m6_techStack >= 90 ? "Production Ready" : "Competent" },
+    { id: "07", name: "Skills Matrix & Fit", score: m7_skillsMatrix, grade: m7_skillsMatrix >= 90 ? "Tier-1 Ready" : "Target Fit" },
+    { id: "08", name: "Resume & ATS Scorecard", score: m8_atsResume, grade: m8_atsResume >= 85 ? "ATS Verified" : "Review Ready" },
+    { id: "09", name: "Presentation & Defense", score: m9_presentation, grade: m9_presentation >= 90 ? "Defense Approved" : "Qualified" },
+    { id: "10", name: "Video & Self-Reflection", score: m10_communication, grade: m10_communication >= 90 ? "High Fluency" : "Proficient" },
+    { id: "11", name: "Assigned Capstones", score: m11_capstones, grade: m11_capstones >= 90 ? "Production Verified" : "Delivered" },
+    { id: "12", name: "Behavioral Review", score: m12_behavioral, grade: m12_behavioral >= 90 ? "Top Quartile" : "Recommended" },
+  ];
+
+  const totalTwelveScoresSum = twelveModuleScores.reduce((acc, m) => acc + m.score, 0);
+  const compositeCumulativeScore = Math.min(100, Math.max(0, Math.round(totalTwelveScoresSum / 12)));
+  const compositeCumulativeScoreDecimal = Number((totalTwelveScoresSum / 12).toFixed(1));
+
   return {
-    cumulativeScore: Math.round(baseAccuracy * multiplier),
+    cumulativeScore: compositeCumulativeScore,
+    cumulativeScoreDecimal: compositeCumulativeScoreDecimal,
+    twelveModuleScores,
     attendanceRate,
     completedProjects,
     hoursLogged,
@@ -325,7 +439,7 @@ function generateReportData(
     totalRangeDays,
     totalWeeks,
     batchDurationMonths,
-    readinessIndex: Math.round((baseAccuracy * 0.45 + baseCoding * 0.35 + baseQuiz * 0.2) * multiplier),
+    readinessIndex: Math.round((m1_assessments * 0.25 + m4_coding * 0.35 + m3_learnHub * 0.2 + m11_capstones * 0.2)),
     performanceTrend,
     codingChallenges,
     heatmapLevels,
@@ -377,6 +491,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
   resumeData = INITIAL_RESUME_DATA,
 }) => {
   const [datePreset, setDatePreset] = useState<DatePreset>("full");
+  const [reportViewMode, setReportViewMode] = useState<"detailed" | "simple">("detailed");
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
   const [selectedBatchFilterId, setSelectedBatchFilterId] = useState<string>("all");
   const [searchStudentQuery, setSearchStudentQuery] = useState("");
@@ -409,6 +524,34 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
     status: string;
     isInSelectedRange: boolean;
   } | null>(null);
+
+  // Mark document body for clean print rendering
+  useEffect(() => {
+    document.body.classList.add("candidate-report-open");
+    return () => {
+      document.body.classList.remove("candidate-report-open");
+    };
+  }, []);
+
+  const handleDownloadPdf = () => {
+    const originalTitle = document.title;
+    const cleanName = (student.name || "Candidate").replace(/\s+/g, "_");
+    document.title = `${cleanName}_MIND2I_Performance_Report`;
+
+    triggerToast("Opening PDF print dialog. Select 'Save as PDF' to download your report.");
+
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch (err) {
+        console.error("Print error:", err);
+      } finally {
+        setTimeout(() => {
+          document.title = originalTitle;
+        }, 1500);
+      }
+    }, 150);
+  };
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const customDateRef = useRef<HTMLDivElement>(null);
@@ -462,9 +605,11 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
   }, [customStartDate, customEndDate]);
 
   const data = useMemo(
-    () => generateReportData(student, datePreset, customStartDate, customEndDate, studentBatch),
-    [student, datePreset, customStartDate, customEndDate, studentBatch]
+    () => generateReportData(student, datePreset, customStartDate, customEndDate, studentBatch, resumeData, submissions, projects),
+    [student, datePreset, customStartDate, customEndDate, studentBatch, resumeData, submissions, projects]
   );
+
+  const scoreTheme = useMemo(() => getScoreColorTheme(data.cumulativeScore), [data.cumulativeScore]);
 
   // ─── Attendance & Shift Synchronization ───
   const [attendanceViewMode, setAttendanceViewMode] = useState<"calendar" | "heatmap">("calendar");
@@ -1232,10 +1377,64 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
     ? student.skills.slice(0, 2).join(" / ")
     : "Full-Stack AI Engineer";
 
-  const mentorName = studentBatch?.mentor || student.mentor || "Dr. Emeka Nwosu";
+  const rawMentor = studentBatch?.mentor || student.mentor || "Vijaya Kumar Mekala";
+  const mentorName =
+    rawMentor.includes("Sharma") || rawMentor.includes("Nwosu") || !rawMentor.trim()
+      ? "Vijaya Kumar Mekala"
+      : rawMentor;
   const collegeName = student.college || studentBatch?.college || studentBatch?.organization || "University of Lagos";
 
   const initials = getInitials(student.name);
+
+  // Candidate-specific synchronized resume data (always ensures candidate's own identity is used)
+  const effectiveCandidateResume = useMemo(() => {
+    const candidateName = student.name || "Candidate";
+    const candidateEmail = student.email || `${candidateName.toLowerCase().replace(/\s+/g, ".")}@mind2i.edu`;
+    const candidateMobile = student.mobile || "+91 98765 43210";
+    const candidateLocation = student.city ? `${student.city}, ${student.state || "India"}` : (student.college || "Hyderabad, India");
+    const candidateGithub = student.githubUrl || `github.com/${candidateName.toLowerCase().replace(/\s+/g, "")}`;
+    const candidateLinkedin = student.linkedinUrl || `linkedin.com/in/${candidateName.toLowerCase().replace(/\s+/g, "")}`;
+    const candidateSkills = (student.skills && student.skills.length > 0)
+      ? student.skills
+      : (resumeData?.skills || [
+          "Python", "FastAPI", "LangChain", "RAG Architecture", "Vector Embeddings",
+          "TypeScript", "React", "Docker", "PostgreSQL"
+        ]);
+
+    const cleanFileName = `${candidateName.replace(/\s+/g, "_")}_Resume.pdf`;
+
+    return {
+      ...resumeData,
+      internId: student.id,
+      internName: candidateName,
+      email: candidateEmail,
+      mobile: candidateMobile,
+      location: candidateLocation,
+      githubUrl: candidateGithub,
+      linkedinUrl: candidateLinkedin,
+      skills: candidateSkills,
+      targetRole: resumeData?.targetRole || trackTitle || "Generative AI & LLM",
+      scorecard: {
+        ...(resumeData?.scorecard || {}),
+        lastScannedFileName: cleanFileName,
+        overallScore: resumeData?.scorecard?.overallScore || 87,
+        grade: resumeData?.scorecard?.grade || "Grade A • Highly Optimized",
+        targetRole: resumeData?.targetRole || trackTitle || "Generative AI & LLM",
+        keywordMatchRate: resumeData?.scorecard?.keywordMatchRate || 80,
+        quantifiedMetricsScore: resumeData?.scorecard?.quantifiedMetricsScore || 88,
+        formattingScore: resumeData?.scorecard?.formattingScore || 96,
+        grammarScore: resumeData?.scorecard?.grammarScore || 88,
+        matchedSkills: candidateSkills.slice(0, 8),
+        missingSkills: ["Prompt Engineering", "Transformers", "vLLM", "gVisor Sandboxing"],
+        executiveSummary: `Analysis of ${candidateName}'s resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements position ${candidateName} in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.`,
+        bulletFixes: resumeData?.scorecard?.bulletFixes || [],
+      },
+      professionalSummary: `Disciplined, production-focused ${resumeData?.targetRole || trackTitle || "AI Engineer"} with demonstrated strength in RAG architectures, high-concurrency API microservices, and modern web application development. Delivered scalable pipelines with quantifiable latency reductions and clean code craftsmanship.`,
+      experience: resumeData?.experience || [],
+      education: resumeData?.education || [],
+      certifications: resumeData?.certifications || [],
+    };
+  }, [student, resumeData, trackTitle]);
 
   return (
     <AnimatePresence>
@@ -1468,6 +1667,36 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                   );
                 })}
 
+                {/* Simple Report Pill - right at the side of Custom Range / Custom Report */}
+                <div className="h-4 w-[1px] bg-slate-300 mx-1 hidden sm:block" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportViewMode((prev) => (prev === "simple" ? "detailed" : "simple"));
+                    triggerToast(
+                      reportViewMode === "simple"
+                        ? "Switched to Full Detailed Dossier."
+                        : "Switched to Simple Visual Summary Report."
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    reportViewMode === "simple"
+                      ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xs ring-2 ring-emerald-400/40 font-black"
+                      : "text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 font-extrabold"
+                  }`}
+                  title="Toggle Simple Report: Easy visual summary with minimal text"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${reportViewMode === "simple" ? "text-amber-300" : "text-emerald-500"}`} />
+                  <span>Simple Report</span>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase ${
+                      reportViewMode === "simple" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    {reportViewMode === "simple" ? "Active" : "Visual"}
+                  </span>
+                </button>
+
                 {/* Custom Date Range Popover */}
                 {showCustomDatePicker && (
                   <div className="absolute right-0 top-full mt-2 w-84 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
@@ -1629,18 +1858,60 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                 )}
               </div>
 
+              {/* Report Format Switcher */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportViewMode("detailed");
+                    triggerToast("Detailed Dossier view active.");
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    reportViewMode === "detailed"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                  }`}
+                  title="Detailed 10-section comprehensive candidate report"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Detailed Report</span>
+                  <span className="sm:hidden">Detailed</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportViewMode("simple");
+                    triggerToast("Simple Visual Report view active.");
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    reportViewMode === "simple"
+                      ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xs font-black"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                  }`}
+                  title="Simple visual report with minimal text"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Simple Report</span>
+                </button>
+              </div>
+
               {/* Action Buttons */}
               <button
-                onClick={() => triggerToast("Candidate metrics exported as CSV.")}
+                onClick={() => {
+                  exportCandidateCsv(student, data.twelveModuleScores, data);
+                  triggerToast("Candidate performance dossier exported as CSV.");
+                }}
                 className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                title="Export all 12 evaluation scores and metrics to CSV"
               >
                 <Download className="w-3.5 h-3.5 text-slate-500" />
                 <span className="hidden sm:inline">Export CSV</span>
               </button>
 
               <button
-                onClick={() => window.print()}
+                onClick={handleDownloadPdf}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                title="Download complete printable candidate performance report as PDF"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Download PDF</span>
@@ -1672,9 +1943,23 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
           {/* MAIN REPORT CANVAS (Solid White Background, Exactly matching Screenshot 1) */}
           {/* ═════════════════════════════════════════════════════════════ */}
           <main id="candidate-report-main" className="bg-white max-w-7xl w-full mx-auto px-4 sm:px-8 py-8 space-y-10 print:p-0 print:space-y-4">
-
-            {/* ─── PAGE TITLE & SUBTITLE ─── */}
-            <div className="print:mb-1">
+            {reportViewMode === "simple" ? (
+              <CandidateSimpleReportView
+                student={student}
+                studentBatch={studentBatch}
+                cohortId={cohortId}
+                trackTitle={trackTitle}
+                data={data}
+                mentorName={mentorName}
+                collegeName={collegeName}
+                onSwitchToDetailed={() => setReportViewMode("detailed")}
+                resumeData={resumeData}
+                triggerToast={triggerToast}
+              />
+            ) : (
+              <>
+                {/* ─── PAGE TITLE & SUBTITLE ─── */}
+                <div className="print:mb-1">
               <div className="text-[11px] font-black uppercase tracking-wider text-indigo-600 mb-1 print:mb-0.5 print:text-[10px]">
                 PERFORMANCE ANALYTICS
               </div>
@@ -1694,9 +1979,9 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
 
             {/* ─── CANDIDATE IDENTITY & OFFICIAL ACCREDITATION DOSSIER ─── */}
             <div className="p-6 sm:p-7 rounded-3xl bg-slate-900 text-white shadow-xl border border-slate-800 print:bg-white print:text-slate-900 print:border print:border-slate-300 print:shadow-none print:p-3.5 print:py-3 print:rounded-xl">
-              <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-6 border-b border-slate-800 print:border-slate-200 print:pb-2.5 print:gap-3">
+              <div className="candidate-hero-header flex flex-col md:flex-row print:flex-row md:items-start print:items-start justify-between gap-6 pb-6 border-b border-slate-800 print:border-slate-200 print:pb-2.5 print:gap-3">
                 {/* Left: Avatar + Candidate Core Info */}
-                <div className="flex items-start gap-4 sm:gap-5 print:gap-3">
+                <div className="flex items-start gap-4 sm:gap-5 print:gap-3 flex-1 min-w-0">
                   <div className="relative shrink-0">
                     <img
                       src={
@@ -1721,8 +2006,8 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-300 print:text-slate-600 font-medium print:text-[10px]">
-                      <span className="font-mono text-indigo-300 print:text-indigo-700 font-bold">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-200 print:text-slate-900 font-semibold print:text-[10px]">
+                      <span className="font-mono text-indigo-300 print:text-indigo-900 font-bold">
                         ID: {student.id.toUpperCase()}
                       </span>
                       <span>•</span>
@@ -1735,25 +2020,132 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                       )}
                     </div>
 
-                    <p className="text-xs text-slate-400 print:text-slate-500 font-medium pt-0.5 print:text-[10px] print:pt-0">
+                    <p className="text-xs text-slate-200 print:text-slate-900 font-semibold pt-0.5 print:text-[10px] print:pt-0">
                       Cohort: {studentBatch?.name || student.batchName || "AI Engineering & Full-Stack Agents"}
                     </p>
+
+                    {/* Social links & resume quick access */}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {student.resumeUrl && (
+                        <a
+                          href={student.resumeUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer print:bg-slate-100 print:text-slate-900 print:border print:border-slate-300"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Uploaded Resume</span>
+                          <ExternalLink className="w-3 h-3 ml-0.5" />
+                        </a>
+                      )}
+                      {student.githubUrl && (
+                        <a
+                          href={student.githubUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer print:text-slate-800"
+                        >
+                          <Github className="w-3.5 h-3.5" />
+                          <span>GitHub</span>
+                        </a>
+                      )}
+                      {student.linkedinUrl && (
+                        <a
+                          href={student.linkedinUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 rounded-xl text-xs font-semibold transition cursor-pointer print:text-sky-700"
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>LinkedIn</span>
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Candidate Technical Skills Badges */}
+                    {student.skills && student.skills.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 print:pt-1">
+                        <span className="text-[10px] font-bold text-slate-200 uppercase tracking-wider print:text-slate-950 mr-1">
+                          Skills:
+                        </span>
+                        {student.skills.map((skill, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2.5 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 text-[11px] font-bold print:bg-slate-100 print:text-slate-950 print:border-slate-300"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Right: Mind2I Official Accreditation Seal & Logo */}
-                <div className="flex flex-col items-start md:items-end justify-between shrink-0 space-y-2 print:space-y-1">
-                  <div className="flex items-center gap-2">
-                    <div className="px-3 py-1 rounded-xl bg-indigo-500/20 border border-indigo-400/30 print:bg-slate-100 print:border-slate-300 print:px-2 print:py-0.5 flex items-center gap-1.5">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400 print:text-emerald-600 print:w-3.5 print:h-3.5" />
-                      <span className="text-[11px] font-mono font-bold tracking-wider text-indigo-200 print:text-slate-800 uppercase print:text-[9px]">
+                {/* Right: Dynamic Cumulative Score Card & Mind2I Official Accreditation Seal */}
+                <div className="candidate-hero-right flex flex-col items-start md:items-end print:items-end justify-start shrink-0 space-y-2 print:space-y-1.5 ml-auto print:ml-auto">
+                  {/* Dynamic CUMULATIVE SCORE Box (Positioned at Top Right, exactly matching user highlight) */}
+                  <div
+                    className={`px-4 py-2.5 rounded-2xl border flex items-center gap-3.5 shadow-lg backdrop-blur-xs transition-all duration-300 print:p-2 print:rounded-xl print:shadow-none ${scoreTheme.darkBgClass} ${scoreTheme.darkBorderClass} ${scoreTheme.printClass}`}
+                    style={{ boxShadow: scoreTheme.darkGlowStyle }}
+                  >
+                    {/* SVG Radial Gauge */}
+                    <div className="relative w-11 h-11 shrink-0 flex items-center justify-center print:w-8 print:h-8">
+                      <svg className="w-full h-full -rotate-90" viewBox="0 0 44 44">
+                        <circle
+                          cx="22"
+                          cy="22"
+                          r="17"
+                          className="stroke-slate-800/80 print:stroke-slate-200"
+                          strokeWidth="3.5"
+                          fill="transparent"
+                        />
+                        <circle
+                          cx="22"
+                          cy="22"
+                          r="17"
+                          stroke={scoreTheme.hexColor}
+                          strokeWidth="3.5"
+                          strokeDasharray={106.8}
+                          strokeDashoffset={106.8 - (106.8 * scoreTheme.score) / 100}
+                          strokeLinecap="round"
+                          fill="transparent"
+                          className="transition-all duration-700 ease-out"
+                        />
+                      </svg>
+                      <Award className={`absolute w-4 h-4 print:w-3 print:h-3 ${scoreTheme.darkTextClass} ${scoreTheme.printTextClass}`} />
+                    </div>
+
+                    {/* Score Details */}
+                    <div className="text-left md:text-right print:text-right">
+                      <div className="text-[10px] font-mono font-black uppercase tracking-wider text-slate-200 print:text-slate-950">
+                        CUMULATIVE SCORE
+                      </div>
+                      <div className="flex items-baseline gap-1.5 md:justify-end print:justify-end">
+                        <span className={`text-2xl font-black tracking-tight ${scoreTheme.darkTextClass} ${scoreTheme.printTextClass}`}>
+                          {scoreTheme.score}%
+                        </span>
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase border ${scoreTheme.darkBadgeClass} ${scoreTheme.printBadgeClass}`}>
+                          {scoreTheme.tierLabel}
+                        </span>
+                      </div>
+                      <div className="text-[9px] font-bold text-slate-300 print:text-slate-900">
+                        12-Domain Composite Average
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mind2I Official Accreditation Seal & Dossier Ref */}
+                  <div className="flex flex-col items-start md:items-end print:items-end gap-1">
+                    <div className="px-2.5 py-1 rounded-xl bg-indigo-500/20 border border-indigo-400/30 print:bg-slate-100 print:border-slate-300 print:px-2 print:py-0.5 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 print:text-emerald-700 print:w-3 print:h-3" />
+                      <span className="text-[10px] font-mono font-bold tracking-wider text-indigo-200 print:text-slate-950 uppercase print:text-[8px]">
                         Official Mind2i Evaluation Dossier
                       </span>
                     </div>
-                  </div>
-                  <div className="text-[11px] font-mono text-slate-400 print:text-slate-600 text-left md:text-right space-y-0.5 print:text-[9px]">
-                    <div>Reference: M2I-REP-{student.id.toUpperCase()}-{new Date().getFullYear()}</div>
-                    <div>Issued: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                    <div className="text-[10px] font-mono text-slate-300 print:text-slate-900 font-semibold text-left md:text-right print:text-right space-y-0.5 print:text-[8px]">
+                      <div>Reference: M2I-REP-{student.id.toUpperCase()}-{new Date().getFullYear()}</div>
+                      <div>Issued: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1762,48 +2154,76 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-5 text-xs print:pt-2.5 print:gap-2">
                 {/* Email Address */}
                 <div className="p-3 rounded-2xl bg-white/5 border border-white/10 print:bg-slate-50 print:border-slate-200/80 print:p-2 print:rounded-lg">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-500 mb-1 print:mb-0.5 print:text-[9px]">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 print:text-slate-800 mb-1 print:mb-0.5 print:text-[9px]">
                     <Mail className="w-3.5 h-3.5 text-indigo-400 print:text-indigo-600 print:w-3 print:h-3" />
                     <span>Candidate Email ID</span>
                   </div>
-                  <div className="font-bold text-slate-100 print:text-slate-900 truncate print:text-[11px]" title={student.email}>
+                  <div className="font-bold text-slate-100 print:text-slate-950 truncate print:text-[11px]" title={student.email}>
                     {student.email || `${student.name.toLowerCase().replace(/\s+/g, ".")}@mind2i.internal`}
                   </div>
                 </div>
 
                 {/* Mobile / Phone */}
                 <div className="p-3 rounded-2xl bg-white/5 border border-white/10 print:bg-slate-50 print:border-slate-200/80 print:p-2 print:rounded-lg">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-500 mb-1 print:mb-0.5 print:text-[9px]">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 print:text-slate-800 mb-1 print:mb-0.5 print:text-[9px]">
                     <Phone className="w-3.5 h-3.5 text-emerald-400 print:text-emerald-600 print:w-3 print:h-3" />
                     <span>Phone / Mobile</span>
                   </div>
-                  <div className="font-bold text-slate-100 print:text-slate-900 truncate print:text-[11px]">
+                  <div className="font-bold text-slate-100 print:text-slate-950 truncate print:text-[11px]">
                     {student.mobile || "+91 98765 43210"}
                   </div>
                 </div>
 
                 {/* College & University */}
                 <div className="p-3 rounded-2xl bg-white/5 border border-white/10 print:bg-slate-50 print:border-slate-200/80 print:p-2 print:rounded-lg">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-500 mb-1 print:mb-0.5 print:text-[9px]">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 print:text-slate-800 mb-1 print:mb-0.5 print:text-[9px]">
                     <Building2 className="w-3.5 h-3.5 text-sky-400 print:text-sky-600 print:w-3 print:h-3" />
                     <span>College / Institution</span>
                   </div>
-                  <div className="font-bold text-slate-100 print:text-slate-900 truncate print:text-[11px]" title={student.college || "Engineering College"}>
+                  <div className="font-bold text-slate-100 print:text-slate-950 truncate print:text-[11px]" title={student.college || "Engineering College"}>
                     {student.college || "BVRIT Hyderabad"}
                   </div>
                 </div>
 
                 {/* Cohort Duration & Timeline */}
                 <div className="p-3 rounded-2xl bg-white/5 border border-white/10 print:bg-slate-50 print:border-slate-200/80 print:p-2 print:rounded-lg">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-500 mb-1 print:mb-0.5 print:text-[9px]">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 print:text-slate-800 mb-1 print:mb-0.5 print:text-[9px]">
                     <Calendar className="w-3.5 h-3.5 text-amber-400 print:text-amber-600 print:w-3 print:h-3" />
                     <span>Internship Duration</span>
                   </div>
-                  <div className="font-bold text-slate-100 print:text-slate-900 truncate print:text-[11px]">
+                  <div className="font-bold text-slate-100 print:text-slate-950 truncate print:text-[11px]">
                     {studentBatch?.durationLabel || "6 Months"} ({formatDateShort(studentBatch?.startDate || student.enrolledAt)} – {formatDateShort(studentBatch?.endDate || "Present")})
                   </div>
                 </div>
               </div>
+
+              {/* Optional: Skills & Portfolio Overview Ribbon */}
+              {(student.resumeUrl || (student.skills && student.skills.length > 0) || student.bio) && (
+                <div className="mt-4 p-3.5 rounded-2xl bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs print:bg-slate-50 print:border-slate-200 print:p-2">
+                  <div className="flex-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300 print:text-slate-800 block mb-1">
+                      Candidate Profile &amp; Bio
+                    </span>
+                    <p className="text-slate-100 print:text-slate-900 text-xs italic line-clamp-2 font-medium">
+                      "{student.bio || "Dedicated, hands-on intern with demonstrated expertise across core technologies, active participation in live labs, and production capstone delivery."}"
+                    </p>
+                  </div>
+                  {student.resumeUrl && (
+                    <div className="shrink-0 flex items-center gap-2">
+                      <a
+                        href={student.resumeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition"
+                      >
+                        <FileCheck className="w-3.5 h-3.5" />
+                        <span>View Resume / CV</span>
+                        <ExternalLink className="w-3 h-3 ml-0.5" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ═════════════════════════════════════════════════════════════ */}
@@ -1811,22 +2231,25 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
             {/* ═════════════════════════════════════════════════════════════ */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:grid-cols-4 print:gap-2.5">
               {/* Card 1: Cumulative Score */}
-              <div className="p-5 print:p-3 print:py-2.5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
+              <div className={`p-5 print:p-3 print:py-2.5 rounded-2xl bg-white border transition-all duration-300 shadow-xs flex flex-col justify-between ${scoreTheme.lightBorderClass}`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-[9px]">
+                  <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider print:text-[9px]">
                     CUMULATIVE SCORE
                   </span>
-                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center print:w-5 print:h-5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center print:w-5 print:h-5 ${scoreTheme.lightBgClass} ${scoreTheme.lightTextClass}`}>
                     <TrendingUp className="w-4 h-4 print:w-3 print:h-3" />
                   </div>
                 </div>
                 <div className="mt-3 print:mt-1">
-                  <div className="text-3xl font-black text-slate-900 tracking-tight flex items-baseline gap-0.5 print:text-xl">
+                  <div className={`text-3xl font-black tracking-tight flex items-baseline gap-0.5 print:text-xl ${scoreTheme.lightTextClass}`}>
                     {data.cumulativeScore}
-                    <span className="text-sm font-bold text-slate-400 print:text-xs">%</span>
+                    <span className="text-sm font-bold text-slate-700 print:text-xs">%</span>
                   </div>
-                  <div className="text-xs font-bold text-emerald-600 mt-2 flex items-center gap-1 print:mt-0.5 print:text-[10px]">
-                    <span>↗ +3.2% from last period</span>
+                  <div className="text-xs font-bold mt-2 flex items-center gap-1.5 print:mt-0.5 print:text-[10px]">
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase border ${scoreTheme.lightBadgeClass}`}>
+                      {scoreTheme.tierLabel}
+                    </span>
+                    <span className="text-slate-800 font-bold text-[11px]">12-Domain Holistic Index</span>
                   </div>
                 </div>
               </div>
@@ -1834,7 +2257,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
               {/* Card 2: Attendance Rate */}
               <div className="p-5 print:p-3 print:py-2.5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-[9px]">
+                  <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider print:text-[9px]">
                     ATTENDANCE RATE
                   </span>
                   <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-500 flex items-center justify-center print:w-5 print:h-5">
@@ -1844,9 +2267,9 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                 <div className="mt-3 print:mt-1">
                   <div className="text-3xl font-black text-slate-900 tracking-tight flex items-baseline gap-0.5 print:text-xl">
                     {data.attendanceRate}
-                    <span className="text-sm font-bold text-slate-400 print:text-xs">%</span>
+                    <span className="text-sm font-bold text-slate-700 print:text-xs">%</span>
                   </div>
-                  <div className="text-xs font-bold text-emerald-600 mt-2 flex items-center gap-1 print:mt-0.5 print:text-[10px]">
+                  <div className="text-xs font-bold text-emerald-700 mt-2 flex items-center gap-1 print:mt-0.5 print:text-[10px]">
                     <span>↗ Above 90% threshold</span>
                   </div>
                 </div>
@@ -1855,7 +2278,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
               {/* Card 3: Completed Projects */}
               <div className="p-5 print:p-3 print:py-2.5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-[9px]">
+                  <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider print:text-[9px]">
                     COMPLETED PROJECTS
                   </span>
                   <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-500 flex items-center justify-center print:w-5 print:h-5">
@@ -1866,7 +2289,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                   <div className="text-3xl font-black text-slate-900 tracking-tight print:text-xl">
                     {data.completedProjects}
                   </div>
-                  <div className="text-xs font-bold text-emerald-600 mt-2 flex items-center gap-1 print:mt-0.5 print:text-[10px]">
+                  <div className="text-xs font-bold text-emerald-700 mt-2 flex items-center gap-1 print:mt-0.5 print:text-[10px]">
                     <span>↗ 4 submitted this month</span>
                   </div>
                 </div>
@@ -1875,7 +2298,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
               {/* Card 4: Readiness Index */}
               <div className="p-5 print:p-3 print:py-2.5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider print:text-[9px]">
+                  <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider print:text-[9px]">
                     READINESS INDEX
                   </span>
                   <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center print:w-5 print:h-5">
@@ -1885,9 +2308,9 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                 <div className="mt-3 print:mt-1">
                   <div className="text-3xl font-black text-slate-900 tracking-tight flex items-baseline gap-0.5 print:text-xl">
                     {data.readinessIndex}
-                    <span className="text-sm font-bold text-slate-400 print:text-xs">/100</span>
+                    <span className="text-sm font-bold text-slate-700 print:text-xs">/100</span>
                   </div>
-                  <div className="text-xs font-bold text-emerald-600 mt-2 flex items-center gap-1 print:mt-0.5 print:text-[10px]">
+                  <div className="text-xs font-bold text-emerald-700 mt-2 flex items-center gap-1 print:mt-0.5 print:text-[10px]">
                     <span>↗ Industry threshold: 75</span>
                   </div>
                 </div>
@@ -3024,7 +3447,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                 <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between break-inside-avoid print:block print:mb-4">
                   <div>
                     {/* Header with Switcher between Monthly Calendar & Activity Heatmap */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100 print:mb-2 print:pb-2">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-indigo-600" />
                         <h4 className="text-sm font-bold text-slate-900">
@@ -3032,7 +3455,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                         </h4>
                       </div>
 
-                      <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 print:hidden">
                         <button
                           type="button"
                           onClick={() => setAttendanceViewMode("calendar")}
@@ -3062,7 +3485,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
 
                     {/* VIEW 1: SYNCHRONIZED MONTHLY ATTENDANCE CALENDAR */}
                     {attendanceViewMode === "calendar" ? (
-                      <div className="space-y-3.5">
+                      <div className="space-y-3.5 print:hidden">
                         {/* Admin Shift Banner */}
                         <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 border border-blue-200/90 rounded-2xl p-3.5">
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3217,7 +3640,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                       </div>
                     ) : (
                       /* VIEW 2: 6-MONTH PLATFORM ACTIVITY HEATMAP */
-                      <div>
+                      <div className="print:hidden">
                         {/* Trimester Phase Tabs for 6-Month Batches */}
                         {data.totalWeeks > 12 && (
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
@@ -3456,7 +3879,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                   </div>
 
                   {/* 3 Stats Callouts at Bottom - Synced with Live Attendance */}
-                  <div className="grid grid-cols-3 gap-2.5 pt-5 mt-4 border-t border-slate-100 text-center">
+                  <div className="grid grid-cols-3 gap-2.5 pt-5 mt-4 border-t border-slate-100 text-center print:pt-1 print:mt-1 print:border-t-0">
                     <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100">
                       <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-500 mb-1">
                         <Clock className="w-3.5 h-3.5 text-indigo-600" />
@@ -3517,197 +3940,197 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
 
                 {/* Right Card: Dynamic Training Hours Breakdown & Monthly Progression */}
                 <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between break-inside-avoid print:block">
-                  <div className="space-y-4">
-                    {/* Header with Title, Filtered Hours Badge, and Sub-Tab Switcher */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                          <BarChart3 className="w-4 h-4 text-indigo-600" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                            <span>Training Hours & Velocity Progression</span>
-                          </h4>
-                          <p className="text-[10px] text-slate-400 font-medium">
-                            {datePreset === "7d"
-                              ? "Daily sprint allocation across current week"
-                              : datePreset === "30d"
-                              ? "4-week sprint cadence for current month"
-                              : "Multi-month training hours and cumulative trajectory"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold border border-slate-200">
-                          {data.weeklyHours.reduce((acc, curr) => acc + curr.liveClasses + curr.selfPaced + curr.peerCoding, 0).toLocaleString()}h Filtered
-                        </span>
-
-                        {/* View Switcher: Both, Weekly, Monthly */}
-                        <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10.5px]">
-                          <button
-                            type="button"
-                            onClick={() => setTrainingGraphView("both")}
-                            className={`px-2 py-1 rounded-md font-bold transition cursor-pointer ${
-                              trainingGraphView === "both"
-                                ? "bg-indigo-600 text-white shadow-2xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            Dual View
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setTrainingGraphView("weekly")}
-                            className={`px-2 py-1 rounded-md font-bold transition cursor-pointer ${
-                              trainingGraphView === "weekly"
-                                ? "bg-indigo-600 text-white shadow-2xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            Weekly
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setTrainingGraphView("monthly")}
-                            className={`px-2 py-1 rounded-md font-bold transition cursor-pointer ${
-                              trainingGraphView === "monthly"
-                                ? "bg-indigo-600 text-white shadow-2xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            Monthly
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* GRAPH 1: Weekly / Sprint Hours Breakdown (Stacked Bar) */}
-                    {(trainingGraphView === "both" || trainingGraphView === "weekly") && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                            <Zap className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>
+                    <div className="space-y-4">
+                      {/* Header with Title, Filtered Hours Badge, and Sub-Tab Switcher */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <BarChart3 className="w-4 h-4 text-indigo-600" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                              <span>Training Hours & Velocity Progression</span>
+                            </h4>
+                            <p className="text-[10px] text-slate-400 font-medium">
                               {datePreset === "7d"
-                                ? "Daily Sprint Breakdown (Mon – Sun)"
+                                ? "Daily sprint allocation across current week"
                                 : datePreset === "30d"
-                                ? "Weekly Sprint Breakdown (W1 – W4)"
-                                : "Sprint & Monthly Training Breakdown"}
+                                ? "4-week sprint cadence for current month"
+                                : "Multi-month training hours and cumulative trajectory"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold border border-slate-200">
+                            {data.weeklyHours.reduce((acc, curr) => acc + curr.liveClasses + curr.selfPaced + curr.peerCoding, 0).toLocaleString()}h Filtered
+                          </span>
+
+                          {/* View Switcher: Both, Weekly, Monthly */}
+                          <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10.5px]">
+                            <button
+                              type="button"
+                              onClick={() => setTrainingGraphView("both")}
+                              className={`px-2 py-1 rounded-md font-bold transition cursor-pointer ${
+                                trainingGraphView === "both"
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              Dual View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTrainingGraphView("weekly")}
+                              className={`px-2 py-1 rounded-md font-bold transition cursor-pointer ${
+                                trainingGraphView === "weekly"
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              Weekly
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTrainingGraphView("monthly")}
+                              className={`px-2 py-1 rounded-md font-bold transition cursor-pointer ${
+                                trainingGraphView === "monthly"
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              Monthly
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* GRAPH 1: Weekly / Sprint Hours Breakdown (Stacked Bar) */}
+                      {(trainingGraphView === "both" || trainingGraphView === "weekly") && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <Zap className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>
+                                {datePreset === "7d"
+                                  ? "Daily Sprint Breakdown (Mon – Sun)"
+                                  : datePreset === "30d"
+                                  ? "Weekly Sprint Breakdown (W1 – W4)"
+                                  : "Sprint & Monthly Training Breakdown"}
+                              </span>
                             </span>
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            Live Classes + Peer Coding + Self-Paced
-                          </span>
-                        </div>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              Live Classes + Peer Coding + Self-Paced
+                            </span>
+                          </div>
 
-                        <div className={`${trainingGraphView === "both" ? "h-36 sm:h-40" : "h-64 sm:h-72"} w-full`}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={data.weeklyHours} margin={{ top: 8, right: 12, left: -20, bottom: 0 }} barSize={datePreset === "7d" ? 22 : 30}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} />
-                              <YAxis domain={[0, datePreset === "7d" ? 12 : datePreset === "30d" ? 65 : 200]} tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} />
-                              <Tooltip
-                                contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "11px" }}
-                                formatter={(value: any, name: any) => [`${value}h`, name]}
-                              />
-                              <Bar dataKey="liveClasses" stackId="hours" fill="#4338ca" name="Live Classes" />
-                              <Bar dataKey="peerCoding" stackId="hours" fill="#93c5fd" name="Peer Coding" />
-                              <Bar dataKey="selfPaced" stackId="hours" fill="#6366f1" radius={[4, 4, 0, 0]} name="Self-Paced Labs" />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
+                          <div className={`${trainingGraphView === "both" ? "h-36 sm:h-40" : "h-64 sm:h-72"} w-full`}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={data.weeklyHours} margin={{ top: 8, right: 12, left: -20, bottom: 0 }} barSize={datePreset === "7d" ? 22 : 30}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} />
+                                <YAxis domain={[0, datePreset === "7d" ? 12 : datePreset === "30d" ? 65 : 200]} tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} tickFormatter={(val) => `${val}h`} width={38} />
+                                <Tooltip
+                                  contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "11px" }}
+                                  formatter={(value: any, name: any) => [`${value}h`, name]}
+                                />
+                                <Bar dataKey="liveClasses" stackId="hours" fill="#4338ca" name="Live Classes" />
+                                <Bar dataKey="peerCoding" stackId="hours" fill="#93c5fd" name="Peer Coding" />
+                                <Bar dataKey="selfPaced" stackId="hours" fill="#6366f1" radius={[4, 4, 0, 0]} name="Self-Paced Labs" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
 
-                        {/* Legend */}
-                        <div className="flex items-center justify-center gap-4 text-[10.5px] font-bold text-slate-500 pt-0.5 flex-wrap">
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#4338ca] rounded-xs" /> Live Classes</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#93c5fd] rounded-xs" /> Peer Coding</span>
-                          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#6366f1] rounded-xs" /> Self-Paced Labs</span>
+                          {/* Legend */}
+                          <div className="flex items-center justify-center gap-4 text-[10.5px] font-bold text-slate-500 pt-0.5 flex-wrap">
+                            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#4338ca] rounded-xs" /> Live Classes</span>
+                            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#93c5fd] rounded-xs" /> Peer Coding</span>
+                            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#6366f1] rounded-xs" /> Self-Paced Labs</span>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* GRAPH 2: Monthly Cumulative Learning & Attendance Velocity Progression */}
-                    {(trainingGraphView === "both" || trainingGraphView === "monthly") && (
-                      <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Monthly Cumulative Hours & Attendance Velocity</span>
-                          </span>
-                          <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200">
-                            Target: 160h/Mo · On-Track
-                          </span>
+                      {/* GRAPH 2: Monthly Cumulative Learning & Attendance Velocity Progression */}
+                      {(trainingGraphView === "both" || trainingGraphView === "monthly") && (
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Monthly Cumulative Hours & Attendance Velocity</span>
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200">
+                              Target: 160h/Mo · On-Track
+                            </span>
+                          </div>
+
+                          <div className={`${trainingGraphView === "both" ? "h-36 sm:h-40" : "h-64 sm:h-72"} w-full`}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={data.monthlyProgression} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                                <defs>
+                                  <linearGradient id="colorMonthlyHours" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.25} />
+                                    <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0} />
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} />
+                                <YAxis domain={[0, "auto"]} tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} tickFormatter={(val) => `${val}h`} width={46} />
+                                <Tooltip
+                                  contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "11px" }}
+                                  formatter={(value: any, name: any) => [
+                                    name === "Attendance Rate" ? `${value}%` : `${value}h`,
+                                    name,
+                                  ]}
+                                />
+                                <Area
+                                  type="monotone"
+                                  dataKey="cumulativeHours"
+                                  stroke="#4f46e5"
+                                  strokeWidth={2.5}
+                                  fillOpacity={1}
+                                  fill="url(#colorMonthlyHours)"
+                                  name="Cumulative Hours"
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="monthlyHours"
+                                  stroke="#0ea5e9"
+                                  strokeWidth={2}
+                                  strokeDasharray="4 4"
+                                  name="Monthly Hours"
+                                  dot={{ r: 3, fill: "#0ea5e9" }}
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          {/* Legend */}
+                          <div className="flex items-center justify-center gap-4 text-[10.5px] font-bold text-slate-500 pt-0.5 flex-wrap">
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-indigo-600 rounded-full inline-block" /> Cumulative Trajectory</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-sky-500 border-b border-dashed border-sky-500 inline-block" /> Monthly Active Hours</span>
+                            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> 98% Adherence</span>
+                          </div>
                         </div>
-
-                        <div className={`${trainingGraphView === "both" ? "h-36 sm:h-40" : "h-64 sm:h-72"} w-full`}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={data.monthlyProgression} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-                              <defs>
-                                <linearGradient id="colorMonthlyHours" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.25} />
-                                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} />
-                              <YAxis domain={[0, "auto"]} tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} />
-                              <Tooltip
-                                contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "11px" }}
-                                formatter={(value: any, name: any) => [
-                                  name === "Attendance Rate" ? `${value}%` : `${value}h`,
-                                  name,
-                                ]}
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="cumulativeHours"
-                                stroke="#4f46e5"
-                                strokeWidth={2.5}
-                                fillOpacity={1}
-                                fill="url(#colorMonthlyHours)"
-                                name="Cumulative Hours"
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="monthlyHours"
-                                stroke="#0ea5e9"
-                                strokeWidth={2}
-                                strokeDasharray="4 4"
-                                name="Monthly Hours"
-                                dot={{ r: 3, fill: "#0ea5e9" }}
-                              />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
-
-                        {/* Legend */}
-                        <div className="flex items-center justify-center gap-4 text-[10.5px] font-bold text-slate-500 pt-0.5 flex-wrap">
-                          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-indigo-600 rounded-full inline-block" /> Cumulative Trajectory</span>
-                          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-sky-500 border-b border-dashed border-sky-500 inline-block" /> Monthly Active Hours</span>
-                          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> 98% Adherence</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Bottom Summary Strip (Zero dead gap, perfectly balanced) */}
-                  <div className="pt-3 mt-3 border-t border-slate-100 flex flex-col justify-between">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Training Time Allocation & Velocity</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
-                        Peak: {Math.max(...data.weeklyHours.map((w) => w.liveClasses + w.selfPaced + w.peerCoding))}h / Sprint in M{data.weeklyHours.length}
-                      </span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      {student.name.split(" ")[0]}'s training volume expanded systematically as project deadlines neared, ramping from {data.weeklyHours[0]?.liveClasses + data.weeklyHours[0]?.selfPaced + data.weeklyHours[0]?.peerCoding}h in period 1 to {data.weeklyHours[data.weeklyHours.length - 1]?.liveClasses + data.weeklyHours[data.weeklyHours.length - 1]?.selfPaced + data.weeklyHours[data.weeklyHours.length - 1]?.peerCoding}h in period {data.weeklyHours.length}. Self-paced development made up 45% of total effort, demonstrating high self-directed engineering discipline.
-                    </p>
+
+                    {/* Bottom Summary Strip */}
+                    <div className="pt-3 mt-3 border-t border-slate-100 flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Training Time Allocation & Velocity</span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200">
+                          Peak: {Math.max(...data.weeklyHours.map((w) => w.liveClasses + w.selfPaced + w.peerCoding))}h / Sprint in M{data.weeklyHours.length}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {student.name.split(" ")[0]}'s training volume expanded systematically as project deadlines neared, ramping from {data.weeklyHours[0]?.liveClasses + data.weeklyHours[0]?.selfPaced + data.weeklyHours[0]?.peerCoding}h in period 1 to {data.weeklyHours[data.weeklyHours.length - 1]?.liveClasses + data.weeklyHours[data.weeklyHours.length - 1]?.selfPaced + data.weeklyHours[data.weeklyHours.length - 1]?.peerCoding}h in period {data.weeklyHours.length}. Self-paced development made up 45% of total effort, demonstrating high self-directed engineering discipline.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
               {/* ── DAILY ACTIVITY LOGS & SPRINT EXECUTION ANALYTICS (EXECUTIVE SYNTHESIS) ── */}
               <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-5 break-inside-avoid print:block">
@@ -4182,24 +4605,24 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                   <div className="flex items-center gap-4">
                     <div className="relative w-20 h-20 rounded-full border-4 border-emerald-500/80 bg-slate-900 flex flex-col items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
                       <span className="text-2xl font-black text-white leading-none">
-                        {resumeData?.scorecard?.overallScore || 87}
+                        {effectiveCandidateResume.scorecard.overallScore}
                       </span>
                       <span className="text-[10px] text-slate-400 font-semibold mt-0.5">/ 100</span>
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                          {resumeData?.scorecard?.grade || "Grade A • Highly Optimized"}
+                          {effectiveCandidateResume.scorecard.grade}
                         </span>
                         <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                          Role: {resumeData?.targetRole || "Generative AI & LLM"}
+                          Role: {effectiveCandidateResume.targetRole}
                         </span>
                       </div>
                       <h4 className="text-sm font-bold text-slate-200 mt-1.5">
                         Deep ATS Parser Audit &amp; Keyword Alignment
                       </h4>
                       <p className="text-[11px] text-slate-400">
-                        Scanned against {resumeData?.scorecard?.lastScannedFileName || "Akshar_Sai_Miryala_Resume_2026.pdf"} • FAANG ATS Standard V4.2
+                        Scanned against {effectiveCandidateResume.scorecard.lastScannedFileName} • FAANG ATS Standard V4.2
                       </p>
                     </div>
                   </div>
@@ -4298,14 +4721,12 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                 </div>
 
                 <p className="text-xs sm:text-[13px] text-slate-700 leading-relaxed font-normal bg-white/70 p-3.5 rounded-xl border border-indigo-100/60 shadow-2xs">
-                  {resumeData?.scorecard?.executiveSummary ||
-                    resumeData?.professionalSummary ||
-                    `${student.name} is a disciplined, production-focused ${resumeData?.targetRole || "AI Engineer"} with demonstrated strength in RAG architectures, high-concurrency API microservices, and modern web application development.`}
+                  {effectiveCandidateResume.scorecard.executiveSummary}
                 </p>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                   <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-[11px]">
-                    🎯 Target Role: <span className="text-indigo-600">{resumeData?.targetRole || "Generative AI & LLM"}</span>
+                    🎯 Target Role: <span className="text-indigo-600">{effectiveCandidateResume.targetRole}</span>
                   </span>
                   <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-[11px]">
                     ⚡ FAANG Readiness: <span className="text-emerald-600">94 / 100</span>
@@ -4342,9 +4763,26 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {student.resumeUrl && (
+                        <a
+                          href={student.resumeUrl}
+                          download={`${student.name.replace(/\s+/g, '_')}_Uploaded_Resume.pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+                        >
+                          <FileCheck className="w-3.5 h-3.5" />
+                          <span>Uploaded Original CV</span>
+                          <Download className="w-3 h-3 ml-0.5" />
+                        </a>
+                      )}
                       <button
-                        onClick={() => triggerToast("FAANG ATS-Standard Resume PDF downloaded successfully.")}
+                        onClick={() => {
+                          downloadResumePdf(effectiveCandidateResume, student);
+                          triggerToast("FAANG ATS-Standard Resume PDF downloaded successfully.");
+                        }}
                         className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
+                        title="Download ATS-compliant resume as PDF"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>Download PDF</span>
@@ -4357,25 +4795,57 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                     {/* Header Details */}
                     <div>
                       <h4 className="text-2xl font-black text-slate-900 capitalize tracking-tight">
-                        {resumeData?.internName || student.name}
+                        {effectiveCandidateResume.internName}
                       </h4>
                       <div className="text-xs font-bold text-indigo-600 mt-0.5 tracking-wide uppercase">
-                        {resumeData?.targetRole || trackTitle}
+                        {effectiveCandidateResume.targetRole}
                       </div>
                       <div className="text-[11px] text-slate-500 mt-1.5 flex flex-wrap items-center gap-2">
-                        <span>{resumeData?.email || student.email || "akshar.sai@mind2i.ai"}</span>
+                        <span>{effectiveCandidateResume.email}</span>
                         <span>·</span>
-                        <span>{resumeData?.mobile || student.mobile || "+1 (555) 019-2834"}</span>
+                        <span>{effectiveCandidateResume.mobile}</span>
                         <span>·</span>
-                        <span>{resumeData?.location || student.college || "San Francisco, CA"}</span>
-                        <span>·</span>
-                        <span className="text-indigo-600 font-semibold cursor-pointer">
-                          github.com/{(resumeData?.internName || student.name).toLowerCase().replace(/\s+/g, "-")}
-                        </span>
-                        <span>·</span>
-                        <span className="text-indigo-600 font-semibold cursor-pointer">
-                          linkedin.com/in/{(resumeData?.internName || student.name).toLowerCase().replace(/\s+/g, "-")}
-                        </span>
+                        <span>{effectiveCandidateResume.location}</span>
+                        {student.githubUrl ? (
+                          <>
+                            <span>·</span>
+                            <a
+                              href={student.githubUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-indigo-600 font-semibold hover:underline"
+                            >
+                              {student.githubUrl.replace(/^https?:\/\/(www\.)?/, '')}
+                            </a>
+                          </>
+                        ) : (
+                          <>
+                            <span>·</span>
+                            <span className="text-indigo-600 font-semibold cursor-pointer">
+                              {effectiveCandidateResume.githubUrl}
+                            </span>
+                          </>
+                        )}
+                        {student.linkedinUrl ? (
+                          <>
+                            <span>·</span>
+                            <a
+                              href={student.linkedinUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-indigo-600 font-semibold hover:underline"
+                            >
+                              {student.linkedinUrl.replace(/^https?:\/\/(www\.)?/, '')}
+                            </a>
+                          </>
+                        ) : (
+                          <>
+                            <span>·</span>
+                            <span className="text-indigo-600 font-semibold cursor-pointer">
+                              {effectiveCandidateResume.linkedinUrl}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -4387,9 +4857,7 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                           <span>PROFESSIONAL SUMMARY</span>
                         </div>
                         <p className="text-xs text-slate-700 leading-relaxed">
-                          {resumeData?.scorecard?.executiveSummary ||
-                            resumeData?.professionalSummary ||
-                            `${student.name} is a results-driven engineer specializing in scalable software systems, machine learning pipelines, and responsive client architectures with demonstrated impact across high-volume production microservices.`}
+                          {effectiveCandidateResume.professionalSummary}
                         </p>
                       </div>
                     )}
@@ -4506,13 +4974,16 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                           <span>TECHNICAL SKILLS &amp; STACK</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                          {(resumeData?.skills || [
-                            "Python", "TypeScript", "LangChain", "RAG Architecture", "Vector Embeddings",
-                            "FastAPI", "React", "Next.js", "Docker", "PostgreSQL", "Redis", "AWS"
-                          ]).map((skill, idx) => (
+                          {((student.skills && student.skills.length > 0)
+                            ? student.skills
+                            : (resumeData?.skills || [
+                                "Python", "TypeScript", "LangChain", "RAG Architecture", "Vector Embeddings",
+                                "FastAPI", "React", "Next.js", "Docker", "PostgreSQL", "Redis", "AWS"
+                              ])
+                          ).map((skill, idx) => (
                             <span
                               key={idx}
-                              className="px-2.5 py-1 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-800 border border-slate-200"
+                              className="px-2.5 py-1 rounded-lg bg-indigo-50 text-[11px] font-bold text-indigo-900 border border-indigo-200/80"
                             >
                               {skill}
                             </span>
@@ -4618,25 +5089,6 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                         ))}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="space-y-2 pt-4 border-t border-slate-100">
-                    {onRequestInterview && (
-                      <button
-                        onClick={() => onRequestInterview(student)}
-                        className="w-full py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 cursor-pointer transition"
-                      >
-                        <Calendar className="w-4 h-4" />
-                        <span>Schedule Technical Interview</span>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => triggerToast("Candidate verified resume link copied to clipboard.")}
-                      className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Share Candidate Profile</span>
-                    </button>
                   </div>
                 </div>
               </div>
@@ -5316,6 +5768,8 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
 
             {/* Bottom print-spacing */}
             <div className="h-10 print:hidden" />
+              </>
+            )}
           </main>
         </div>
       </motion.div>

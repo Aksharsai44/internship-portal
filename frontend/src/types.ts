@@ -18,6 +18,7 @@ export interface Batch {
   description: string;
   technologies?: string[]; // skill/tech tags for this cohort
   mentor?: string;
+  isLocked?: boolean;
 }
 
 export interface Student {
@@ -609,6 +610,7 @@ export interface InternResumeData {
   experience: InternResumeExperience[];
   skills: string[];
   certifications: string[];
+  projects?: Array<{ name: string; tech: string; desc: string }>;
   scorecard: ATSScanScorecard;
   isSyncedToClientPortal: boolean;
   lastSyncedAt?: string;

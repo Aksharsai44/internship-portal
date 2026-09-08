@@ -40,7 +40,7 @@ export const INITIAL_PROJECT_ASSIGNMENTS: ProjectAssignment[] = [
 3. Confirm clean TypeScript typing for data points rather than defaulting to 'any'.
 4. Verify edge cases: zero data state, single data point, and max value overflow scaling.`,
     createdAt: "2026-08-20T10:00:00Z",
-    createdBy: "Dr. Emeka Nwosu",
+    createdBy: "Vijaya Kumar Mekala",
     status: "todo",
   },
   {
@@ -156,7 +156,7 @@ export const INITIAL_PROJECT_ASSIGNMENTS: ProjectAssignment[] = [
 2. Documents exceeding context window must be chunked with map-reduce summarization.
 3. Exponential backoff must include random jitter to prevent thundering herd.`,
     createdAt: "2026-08-01T11:00:00Z",
-    createdBy: "Dr. Emeka Nwosu",
+    createdBy: "Vijaya Kumar Mekala",
     status: "completed",
   },
   {
