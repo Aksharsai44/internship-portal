@@ -219,16 +219,40 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
   onToast,
   currentAdminUser,
 }) => {
-  // Navigation & View Mode: "roster" or "profile"
-  const [viewMode, setViewMode] = useState<"roster" | "profile">("roster");
+  // Navigation & View Mode: "roster" or "profile" (persisted across reloads)
+  const [viewMode, setViewMode] = useState<"roster" | "profile">(() => {
+    try {
+      const saved = localStorage.getItem("m2i_admin_eval_view_mode");
+      if (saved === "roster" || saved === "profile") return saved;
+    } catch {}
+    return "roster";
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("m2i_admin_eval_view_mode", viewMode);
+    } catch {}
+  }, [viewMode]);
 
   // Profile Sub-Tab: "evaluation" | "documents" | "videos"
   const [profileTab, setProfileTab] = useState<"evaluation" | "documents" | "videos">("evaluation");
 
-  // Batch filtering: default to selectedBatch id or "all"
-  const [activeBatchId, setActiveBatchId] = useState<string>(
-    selectedBatch && selectedBatch.id ? selectedBatch.id : "all"
-  );
+  // Batch filtering: default to saved, selectedBatch id, or "all"
+  const [activeBatchId, setActiveBatchId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("m2i_admin_eval_active_batch_id");
+      if (saved) return saved;
+    } catch {}
+    return selectedBatch && selectedBatch.id ? selectedBatch.id : "all";
+  });
+
+  React.useEffect(() => {
+    try {
+      if (activeBatchId) {
+        localStorage.setItem("m2i_admin_eval_active_batch_id", activeBatchId);
+      }
+    } catch {}
+  }, [activeBatchId]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "evaluated" | "pending" | "my_pending" | "my_evaluated">("all");
 
@@ -299,8 +323,22 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     }
   });
 
-  // ─── Active Evaluation Round Scope (Cohort-Wide or Specific Round) ───
-  const [selectedEvaluationRound, setSelectedEvaluationRound] = useState<string>("System Architecture & System Defense");
+  // ─── Active Evaluation Round Scope (Cohort-Wide or Specific Round) (persisted) ───
+  const [selectedEvaluationRound, setSelectedEvaluationRound] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("m2i_admin_eval_selected_round");
+      if (saved) return saved;
+    } catch {}
+    return "System Architecture & System Defense";
+  });
+
+  React.useEffect(() => {
+    try {
+      if (selectedEvaluationRound) {
+        localStorage.setItem("m2i_admin_eval_selected_round", selectedEvaluationRound);
+      }
+    } catch {}
+  }, [selectedEvaluationRound]);
   const [newEvaluationScope, setNewEvaluationScope] = useState<"cohort" | "single">("cohort");
 
   // Active batch object and student filter helpers
@@ -527,10 +565,22 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     });
   }, [students, activeBatchId, searchQuery, statusFilter, activeAdmin.name, multiEvaluationsMap, selectedEvaluationRound]);
 
-  // Selected student for evaluation
+  // Selected student for evaluation (persisted across reloads)
   const [selectedStudentId, setSelectedStudentId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem("m2i_admin_eval_selected_student_id");
+      if (saved) return saved;
+    } catch {}
     return filteredStudents.length > 0 ? filteredStudents[0].id : students[0]?.id || "";
   });
+
+  React.useEffect(() => {
+    try {
+      if (selectedStudentId) {
+        localStorage.setItem("m2i_admin_eval_selected_student_id", selectedStudentId);
+      }
+    } catch {}
+  }, [selectedStudentId]);
 
   const currentStudent = useMemo(() => {
     return (

@@ -123,11 +123,65 @@ import { ProfileView } from "./components/ProfileView";
 import { InternResourcesVaultView, DEFAULT_SAMPLE_RESOURCES } from "./components/InternResourcesVaultView";
 import { motion, AnimatePresence } from "motion/react";
 
+export const DEFAULT_ADMIN_USER = {
+  name: "Vijaya Kumar Mekala",
+  role: "Lead Evaluator & Program Director",
+  email: "vijayakumar@mind2i.edu",
+  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=VijayaKumar",
+  assignedBatches: ["all"],
+};
+
+export const getInitialAuthSession = () => {
+  try {
+    const explicitLogout = localStorage.getItem("mind2i_explicit_logout");
+    if (explicitLogout === "true") {
+      return {
+        isAuthenticated: false,
+        role: "admin" as UserRole,
+        user: null,
+      };
+    }
+    const saved = localStorage.getItem("mind2i_auth_session");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed.isAuthenticated === "boolean") {
+        return {
+          isAuthenticated: parsed.isAuthenticated,
+          role: (parsed.role as UserRole) || "admin",
+          user: parsed.user || (parsed.role === "admin" ? DEFAULT_ADMIN_USER : null),
+        };
+      }
+    }
+    // Default to authenticated as admin so page refreshes never redirect to the brochure page
+    return {
+      isAuthenticated: true,
+      role: "admin" as UserRole,
+      user: DEFAULT_ADMIN_USER,
+    };
+  } catch {
+    return {
+      isAuthenticated: true,
+      role: "admin" as UserRole,
+      user: DEFAULT_ADMIN_USER,
+    };
+  }
+};
+
 export default function App() {
   // Global State
-  const [userRole, setUserRole] = useState<UserRole>("admin");
+  const initialAuth = useMemo(() => getInitialAuthSession(), []);
+  const [userRole, setUserRole] = useState<UserRole>(initialAuth.role);
   const [batches, setBatches] = useState<Batch[]>(initialBatches);
-  const [selectedBatch, setSelectedBatch] = useState<Batch>(emptyBatch);
+  const [selectedBatch, setSelectedBatch] = useState<Batch>(() => {
+    try {
+      const savedBatchId = localStorage.getItem("mind2i_selected_batch_id");
+      if (savedBatchId) {
+        const found = initialBatches.find((b) => b.id === savedBatchId);
+        if (found) return found;
+      }
+    } catch {}
+    return emptyBatch;
+  });
   const [students, setStudents] = useState<Student[]>(() => {
     try {
       const savedEvals = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
@@ -514,16 +568,77 @@ export default function App() {
     });
   };
 
-  // Active Navigation Tab
-  const [activeTab, setActiveTab] = useState("dashboard");
+  // Active Navigation Tab (persisted across page reloads)
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      const savedTab = localStorage.getItem("mind2i_active_tab");
+      if (savedTab) return savedTab;
+    } catch {}
+    return "dashboard";
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Authentication State (persisted across page reloads)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(initialAuth.isAuthenticated);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState<any>(null);
+  const [loggedInUser, setLoggedInUser] = useState<any>(initialAuth.user);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  // Sync activeTab to localStorage
+  useEffect(() => {
+    try {
+      if (activeTab) {
+        localStorage.setItem("mind2i_active_tab", activeTab);
+      }
+    } catch {}
+  }, [activeTab]);
+
+  // Sync authentication session to localStorage
+  useEffect(() => {
+    try {
+      if (isAuthenticated) {
+        localStorage.setItem(
+          "mind2i_auth_session",
+          JSON.stringify({
+            isAuthenticated: true,
+            role: userRole,
+            user: loggedInUser || (userRole === "admin" ? DEFAULT_ADMIN_USER : null),
+          })
+        );
+        localStorage.removeItem("mind2i_explicit_logout");
+      }
+    } catch {}
+  }, [isAuthenticated, userRole, loggedInUser]);
+
+  // Sync selectedBatch to localStorage
+  useEffect(() => {
+    try {
+      if (selectedBatch && selectedBatch.id) {
+        localStorage.setItem("mind2i_selected_batch_id", selectedBatch.id);
+      }
+    } catch {}
+  }, [selectedBatch]);
+
+  // Sync currentStudent and currentClient on reload
+  useEffect(() => {
+    if (userRole === "student" && loggedInUser?.email && students.length > 0) {
+      const match = students.find((s) => s.email.toLowerCase() === loggedInUser.email.toLowerCase());
+      if (match && match.id !== currentStudent?.id) {
+        setCurrentStudent(match);
+        const b = batches.find((x) => x.id === match.batchId);
+        if (b && (!selectedBatch || selectedBatch.id !== b.id)) {
+          setSelectedBatch(b);
+        }
+      }
+    }
+  }, [students, userRole, loggedInUser, batches, currentStudent?.id, selectedBatch]);
+
+  useEffect(() => {
+    if (userRole === "client" && loggedInUser && !currentClient) {
+      setCurrentClient(loggedInUser);
+    }
+  }, [userRole, loggedInUser, currentClient]);
 
   // Notification State & Interconnected Feed
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
@@ -652,7 +767,9 @@ export default function App() {
         if (Array.isArray(res.data)) {
           setBatches(res.data);
           if (res.data.length > 0) {
-            setSelectedBatch(res.data[0]);
+            const savedBatchId = localStorage.getItem("mind2i_selected_batch_id");
+            const matched = savedBatchId ? res.data.find((b: Batch) => b.id === savedBatchId) : null;
+            setSelectedBatch(matched || res.data[0]);
           }
         }
       })
@@ -1402,12 +1519,22 @@ export default function App() {
 
   const currentNavItems = userRole === "admin" ? adminNavItems : userRole === "client" ? clientNavItems : studentNavItems;
 
-  // Logout
+  // Logout - Explicit sign-out clears session and presents the brochure / landing page
   const handleLogout = () => {
+    try {
+      localStorage.setItem("mind2i_explicit_logout", "true");
+      localStorage.removeItem("mind2i_auth_session");
+      localStorage.removeItem("mind2i_active_tab");
+      localStorage.removeItem("mind2i_selected_batch_id");
+      localStorage.removeItem("m2i_admin_eval_view_mode");
+      localStorage.removeItem("m2i_admin_eval_selected_round");
+      localStorage.removeItem("m2i_admin_eval_selected_student_id");
+    } catch {}
     setIsAuthenticated(false);
     setLoggedInUser(null);
     setCurrentClient(null);
     setUserRole("student");
+    setActiveTab("dashboard");
   };
 
   // Gradient based on role
@@ -1426,11 +1553,36 @@ export default function App() {
           <LoginModal
             onClose={() => setShowLoginModal(false)}
             onLoginSuccess={(role, user) => {
+              try {
+                localStorage.removeItem("mind2i_explicit_logout");
+                localStorage.setItem(
+                  "mind2i_auth_session",
+                  JSON.stringify({
+                    isAuthenticated: true,
+                    role,
+                    user,
+                  })
+                );
+              } catch {}
               setIsAuthenticated(true);
               setUserRole(role);
               setLoggedInUser(user);
               setShowLoginModal(false);
-              setActiveTab("dashboard");
+
+              // Restore saved tab if valid for this role, else default to dashboard
+              const savedTab = localStorage.getItem("mind2i_active_tab");
+              const validTabsForRole =
+                role === "admin"
+                  ? adminNavItems.map((n) => n.id)
+                  : role === "client"
+                  ? clientNavItems.map((n) => n.id)
+                  : studentNavItems.map((n) => n.id);
+
+              if (savedTab && validTabsForRole.includes(savedTab)) {
+                setActiveTab(savedTab);
+              } else {
+                setActiveTab("dashboard");
+              }
 
               if (role === "student" && user) {
                 const stu = students.find(s => s.email === user.email);
@@ -1457,6 +1609,21 @@ export default function App() {
             existingStudents={students}
             onRegisterStudent={handleAddStudent}
             onAutoLogin={(newStudent) => {
+              try {
+                localStorage.removeItem("mind2i_explicit_logout");
+                localStorage.setItem(
+                  "mind2i_auth_session",
+                  JSON.stringify({
+                    isAuthenticated: true,
+                    role: "student",
+                    user: {
+                      email: newStudent.email || "",
+                      name: newStudent.name || "Student",
+                      role: "student",
+                    },
+                  })
+                );
+              } catch {}
               setIsAuthenticated(true);
               setUserRole("student");
               setLoggedInUser({
