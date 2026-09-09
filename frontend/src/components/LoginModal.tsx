@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, Loader2, AlertCircle, HelpCircle, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { X, Mail, Lock, Loader2, AlertCircle, HelpCircle, Eye, EyeOff, ArrowRight, ShieldCheck, Users } from 'lucide-react';
 import axios from 'axios';
 import { Minda2Logo } from './Minda2Logo';
 import { UserRole } from '../types';

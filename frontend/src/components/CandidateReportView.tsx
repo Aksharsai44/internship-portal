@@ -16,6 +16,9 @@ import {
   AttendanceDayStatus,
   LeaveRequest,
   InternResumeData,
+  InternResource,
+  InternReflectionVideo,
+  InternEvaluation,
 } from "../types";
 import {
   X, User, Phone, Mail, Building2, Calendar, Flame, Award, Clock, Printer,
@@ -26,7 +29,7 @@ import {
   Video, MessageSquare, Shield, Lightbulb, Users, ArrowRight, Eye, EyeOff,
   Volume2, Maximize2, Layers, Cpu, CornerDownRight, CheckSquare, Bookmark,
   Share2, ArrowUpRight, Search, FolderKanban, FileArchive, LayoutDashboard,
-  Radio, HelpCircle, ListChecks
+  Radio, HelpCircle, ListChecks, FolderGit2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -51,6 +54,7 @@ import { INITIAL_RESUME_DATA } from "../data/mockResumeData";
 import { CandidateSimpleReportView } from "./CandidateSimpleReportView";
 import { getScoreColorTheme } from "../utils/scoreColorUtils";
 import { downloadResumePdf, exportCandidateCsv } from "../utils/resumeDownload";
+import { DEFAULT_SAMPLE_RESOURCES } from "./InternResourcesVaultView";
 
 // ─── Types ───
 interface CandidateReportViewProps {
@@ -297,27 +301,89 @@ function generateReportData(
     { skill: "Frontend React", self: 89, demonstrated: Math.round(94 * multiplier) },
   ];
 
-  // 7. Presentation Evaluation
+  // Multi-Admin Evaluations & Consensus Average fallback (prioritizing averaged faculty live evaluations)
+  const multiAdminList: InternEvaluation[] = (() => {
+    try {
+      const savedMap = JSON.parse(localStorage.getItem("m2i_intern_multi_evaluations") || "{}");
+      if (savedMap[student.id] && Array.isArray(savedMap[student.id]) && savedMap[student.id].length > 0) {
+        return savedMap[student.id];
+      }
+    } catch {}
+    if (student.evaluations && student.evaluations.length > 0) {
+      return student.evaluations;
+    }
+    return [];
+  })();
+
+  const localEval = (() => {
+    // If multi-admin evaluations are recorded, calculate the authoritative average across all admins
+    const validEvals = multiAdminList.filter((e) => (e.overallRating || 0) > 0);
+    if (validEvals.length > 0) {
+      const count = validEvals.length;
+      const avgOverall = Math.round(validEvals.reduce((a, b) => a + (b.overallRating || 90), 0) / count);
+      const avgComm = Math.round(validEvals.reduce((a, b) => a + (b.communicationScore || 90), 0) / count);
+      const avgGrammar = Math.round(validEvals.reduce((a, b) => a + (b.grammarScore || 88), 0) / count);
+      const avgFluency = Math.round(validEvals.reduce((a, b) => a + (b.fluencyScore || 91), 0) / count);
+      const avgProject = Math.round(validEvals.reduce((a, b) => a + (b.projectScore || 92), 0) / count);
+      let base = student.evaluation;
+      try {
+        const saved = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
+        if (saved[student.id]) base = saved[student.id];
+      } catch {}
+      return {
+        ...(base || {}),
+        overallRating: avgOverall,
+        communicationScore: avgComm,
+        grammarScore: avgGrammar,
+        fluencyScore: avgFluency,
+        projectScore: avgProject,
+      } as InternEvaluation;
+    }
+
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
+      if (saved[student.id]) return saved[student.id];
+    } catch {}
+    if (student.evaluation && (student.evaluation.communicationScore || student.evaluation.aiVerdict)) return student.evaluation;
+    return student.evaluation;
+  })();
+
+  // Verified Documents Analysis Calibration (Overall based sync from Admin audit)
+  const savedDocsList: InternResource[] = (() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+      if (saved[student.id] && saved[student.id].length > 0) return saved[student.id];
+    } catch {}
+    return student.resources && student.resources.length > 0 ? student.resources : [];
+  })();
+  const evaluatedDocs = savedDocsList.filter((d) => typeof d.aiRating === "number" && d.aiRating > 0);
+  const avgVerifiedDocRating = evaluatedDocs.length > 0
+    ? Math.round(evaluatedDocs.reduce((acc, d) => acc + (d.aiRating || 95), 0) / evaluatedDocs.length)
+    : null;
+
+  // 7. Presentation Evaluation (prioritizing evaluation fluency & verified documents if present)
+  const evalFluency = localEval?.fluencyScore;
   const presentationScores = [
-    { category: "Technical Clarity", score: Math.round(92 * multiplier) },
-    { category: "Presentation Deck", score: Math.round(84 * multiplier) },
-    { category: "Q&A Handling", score: Math.round(80 * multiplier) },
-    { category: "Articulation", score: Math.round(88 * multiplier) },
+    { category: "Technical Clarity", score: avgVerifiedDocRating ? Math.min(100, Math.round(avgVerifiedDocRating * 0.99)) : (evalFluency ? Math.min(100, Math.round(evalFluency * 1.02)) : Math.round(92 * multiplier)) },
+    { category: "Presentation Deck", score: avgVerifiedDocRating ?? (evalFluency ? Math.min(100, Math.round(evalFluency * 0.96)) : Math.round(84 * multiplier)) },
+    { category: "Q&A Handling", score: evalFluency ? Math.min(100, Math.round(evalFluency * 0.94)) : Math.round(80 * multiplier) },
+    { category: "Articulation", score: evalFluency ? evalFluency : Math.round(88 * multiplier) },
   ];
 
-  // 8. Communication Skills Assessment
+  // 8. Communication Skills Assessment (prioritizing evaluation communication & fluency if present)
+  const evalComm = localEval?.communicationScore;
   const communicationSkills = [
-    { skill: "Tone", score: Math.round(90 * multiplier) },
-    { skill: "Fluency", score: Math.round(87 * multiplier) },
-    { skill: "Confidence", score: Math.round(84 * multiplier) },
-    { skill: "Structure", score: Math.round(91 * multiplier) },
+    { skill: "Tone", score: evalComm ? Math.min(100, Math.round(evalComm * 0.99)) : Math.round(90 * multiplier) },
+    { skill: "Fluency", score: evalFluency ? evalFluency : Math.round(87 * multiplier) },
+    { skill: "Confidence", score: evalComm ? Math.min(100, Math.round(evalComm * 0.96)) : Math.round(84 * multiplier) },
+    { skill: "Structure", score: evalComm ? Math.min(100, Math.round(evalComm * 1.01)) : Math.round(91 * multiplier) },
   ];
 
   // 9. Soft Skills Radar
   const softSkills = [
-    { subject: "Collaboration", score: Math.round(88 * multiplier), fullMark: 100 },
+    { subject: "Collaboration", score: evalComm ? Math.min(100, Math.round(evalComm * 0.98)) : Math.round(88 * multiplier), fullMark: 100 },
     { subject: "Accountability", score: Math.round(92 * multiplier), fullMark: 100 },
-    { subject: "Communication", score: Math.round(85 * multiplier), fullMark: 100 },
+    { subject: "Communication", score: evalComm ? evalComm : Math.round(85 * multiplier), fullMark: 100 },
     { subject: "Initiative", score: Math.round(94 * multiplier), fullMark: 100 },
     { subject: "Adaptability", score: Math.round(90 * multiplier), fullMark: 100 },
   ];
@@ -342,7 +408,8 @@ function generateReportData(
   // 05. Attendance, Training & Daily Activity
   const m5_attendance = Math.min(100, Math.max(0, Math.round(attendanceRate * (preset === "7d" ? 0.98 : 1.0))));
   // 06. Project Execution & Tech Stack Research
-  const m6_techStack = Math.min(
+  const evalProject = localEval?.projectScore;
+  const m6_techStack = evalProject ?? Math.min(
     100,
     Math.max(
       0,
@@ -361,8 +428,9 @@ function generateReportData(
       )
     )
   );
-  // 08. Interactive Resume Showcase & Deep ATS Scorecard
-  const m8_atsResume = Math.min(
+  // 08. Interactive Resume Showcase & Deep ATS Scorecard (prioritizing evaluation grammar if present)
+  const evalGrammar = localEval?.grammarScore;
+  const m8_atsResume = evalGrammar ?? Math.min(
     100,
     Math.max(
       0,
@@ -380,7 +448,7 @@ function generateReportData(
     )
   );
   // 10. Video Portfolio & Candidate Self-Reflection & Communication
-  const m10_communication = Math.min(
+  const m10_communication = evalComm ?? Math.min(
     100,
     Math.max(
       0,
@@ -390,8 +458,8 @@ function generateReportData(
     )
   );
   // 11. Assigned Projects & Engineering Deliverables Portfolio (Submissions)
-  let m11_capstones = Math.min(100, Math.round(95 * multiplier));
-  if (submissions && submissions.length > 0 && projects && projects.length > 0) {
+  let m11_capstones = evalProject ? Math.min(100, Math.round(evalProject * 1.01)) : Math.min(100, Math.round(95 * multiplier));
+  if (!evalProject && submissions && submissions.length > 0 && projects && projects.length > 0) {
     const candidateSubs = submissions.filter((s) => s.studentId === student.id);
     const submittedRate = Math.min(1, candidateSubs.length / Math.max(1, projects.length));
     const passedSubs = candidateSubs.filter((s) => s.status === "passed" || ((s.gradePoints ?? 0) >= 80)).length;
@@ -507,6 +575,95 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
 
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [reflectionVideoPlaying, setReflectionVideoPlaying] = useState(false);
+
+  // Retrieve all recorded multi-admin evaluations for this candidate
+  const multiAdminEvaluations: InternEvaluation[] = useMemo(() => {
+    try {
+      const savedMap = JSON.parse(localStorage.getItem("m2i_intern_multi_evaluations") || "{}");
+      if (savedMap[student.id] && Array.isArray(savedMap[student.id]) && savedMap[student.id].length > 0) {
+        return savedMap[student.id];
+      }
+    } catch {}
+    if (student.evaluations && student.evaluations.length > 0) {
+      return student.evaluations;
+    }
+    return [];
+  }, [student]);
+
+  // Compute panel consensus average scores across all admin evaluations
+  const panelConsensusAverage = useMemo(() => {
+    const validEvals = multiAdminEvaluations.filter((e) => (e.overallRating || 0) > 0);
+    if (validEvals.length === 0) return null;
+    const count = validEvals.length;
+    const avgOverall = Math.round(validEvals.reduce((a, b) => a + (b.overallRating || 90), 0) / count);
+    const avgComm = Math.round(validEvals.reduce((a, b) => a + (b.communicationScore || 90), 0) / count);
+    const avgGrammar = Math.round(validEvals.reduce((a, b) => a + (b.grammarScore || 88), 0) / count);
+    const avgFluency = Math.round(validEvals.reduce((a, b) => a + (b.fluencyScore || 91), 0) / count);
+    const avgProject = Math.round(validEvals.reduce((a, b) => a + (b.projectScore || 92), 0) / count);
+    return {
+      avgOverall,
+      avgComm,
+      avgGrammar,
+      avgFluency,
+      avgProject,
+      count,
+      evaluators: validEvals,
+    };
+  }, [multiAdminEvaluations]);
+
+  // Dynamic fallback readers to ensure Admin Profile Reviews & Video Uploads are NEVER lost
+  const effectiveEvaluation = useMemo(() => {
+    let base = student.evaluation;
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
+      if (saved[student.id]) base = saved[student.id];
+    } catch {}
+
+    if (panelConsensusAverage) {
+      return {
+        ...(base || {}),
+        overallRating: panelConsensusAverage.avgOverall,
+        communicationScore: panelConsensusAverage.avgComm,
+        grammarScore: panelConsensusAverage.avgGrammar,
+        fluencyScore: panelConsensusAverage.avgFluency,
+        projectScore: panelConsensusAverage.avgProject,
+        reviewerName: panelConsensusAverage.count > 1
+          ? `Faculty Consensus Panel (${panelConsensusAverage.count} Reviewers)`
+          : (base?.reviewerName || "Faculty Reviewer"),
+        reviewerRole: panelConsensusAverage.count > 1
+          ? `Consensus of ${panelConsensusAverage.count} Faculty Evaluations`
+          : (base?.reviewerRole || "Lead Evaluator"),
+      } as InternEvaluation;
+    }
+
+    if (base && (base.communicationScore || base.aiVerdict)) {
+      return base;
+    }
+    return student.evaluation;
+  }, [student, panelConsensusAverage]);
+
+  const effectiveReflectionVideo = useMemo(() => {
+    if (student.reflectionVideo && student.reflectionVideo.videoUrl) {
+      return student.reflectionVideo;
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+      if (saved[student.id]) return saved[student.id];
+    } catch {}
+    return student.reflectionVideo;
+  }, [student]);
+
+  const effectiveResources = useMemo(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+      if (saved[student.id] && saved[student.id].length > 0) return saved[student.id];
+    } catch {}
+    if (student.resources && student.resources.length > 0) {
+      return student.resources;
+    }
+    return DEFAULT_SAMPLE_RESOURCES(student.id, student.batchId);
+  }, [student]);
+
   const [customStartDate, setCustomStartDate] = useState("2025-10-06");
   const [customEndDate, setCustomEndDate] = useState("2025-11-28");
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
@@ -5112,162 +5269,319 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 print:grid-cols-1 gap-4">
-                {/* Left Card: Video Player & Interactive Buttons (Hidden in Download Report / Print) */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between print:hidden">
-                  <div className="relative aspect-video rounded-xl bg-slate-900 overflow-hidden flex items-center justify-center p-4">
-                    {/* Top Badges */}
-                    <div className="absolute top-3 left-3 flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                        RECORDED
-                      </span>
-                    </div>
-                    <div className="absolute top-3 right-3 text-white/80 font-mono text-[10px]">
-                      38:24
-                    </div>
+              {/* Filter candidate's project submissions & demo videos */}
+              {(() => {
+                const candidateProjectSubmissions = (submissions || []).filter(
+                  (s) => s.studentId === student.id || s.studentName?.toLowerCase() === student.name.toLowerCase()
+                );
+                const projectsWithDemoVideos = candidateProjectSubmissions.filter((s) => !!s.demoVideoUrl);
 
-                    {/* Center Play Button */}
-                    <button
-                      onClick={() => setVideoPlaying(!videoPlaying)}
-                      className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-500 transition shadow-lg cursor-pointer"
-                    >
-                      {videoPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
-                    </button>
-
-                    {/* Bottom Controls */}
-                    <div className="absolute bottom-3 left-4 right-4 text-white">
-                      <div className="text-xs font-bold truncate mb-1">
-                        Capstone Defense — AI-Powered Learning Analytics Platform
-                      </div>
-                      <div className="flex items-center gap-2 text-[10px] font-mono text-white/70">
-                        <span>14:32</span>
-                        <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
-                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: "38%" }} />
+                return (
+                  <div className="space-y-4">
+                    {/* Project-Wise Demo Videos Showcase (If projects with demo videos exist) */}
+                    {projectsWithDemoVideos.length > 0 && (
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4 break-inside-avoid print:hidden">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <Video className="w-4 h-4 text-indigo-600" />
+                            <h4 className="text-sm font-black text-slate-900">
+                              Project-Wise Demo &amp; Presentation Recordings ({projectsWithDemoVideos.length})
+                            </h4>
+                          </div>
+                          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            Deliverable Demos Verified
+                          </span>
                         </div>
-                        <span>38:24</span>
-                        <Volume2 className="w-3 h-3 ml-1" />
-                        <Maximize2 className="w-3 h-3" />
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* 4 Asset Buttons */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
-                    <button
-                      onClick={() => triggerToast("GitHub repository opened.")}
-                      className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Github className="w-3.5 h-3.5" />
-                      <span>GitHub Repo</span>
-                    </button>
-                    <button
-                      onClick={() => triggerToast("Live production demo opened.")}
-                      className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      <span>Live Demo</span>
-                    </button>
-                    <button
-                      onClick={() => triggerToast("Presentation slide deck opened.")}
-                      className="px-3 py-2 rounded-xl bg-fuchsia-600 text-white text-xs font-bold hover:bg-fuchsia-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Presentation className="w-3.5 h-3.5" />
-                      <span>Slide Deck</span>
-                    </button>
-                    <button
-                      onClick={() => triggerToast("API Swagger documentation opened.")}
-                      className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>API Docs</span>
-                    </button>
-                  </div>
-                </div>
+                        <div className={`grid grid-cols-1 ${projectsWithDemoVideos.length > 1 ? "md:grid-cols-2" : ""} gap-4`}>
+                          {projectsWithDemoVideos.map((projSub, pIdx) => {
+                            const matchingAssignment = (projects || []).find((p) => p.id === projSub.projectId);
+                            const projTitle = matchingAssignment?.title || projSub.projectName || `Project Submission ${pIdx + 1}`;
+                            return (
+                              <div key={projSub.id || pIdx} className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-950 text-white flex flex-col justify-between">
+                                <div className="relative aspect-video bg-black flex items-center justify-center group">
+                                  {projSub.demoVideoUrl?.includes("youtube.com") || projSub.demoVideoUrl?.includes("youtu.be") ? (
+                                    <iframe
+                                      src={projSub.demoVideoUrl.replace("watch?v=", "embed/").replace("youtu.be/", "youtube.com/embed/")}
+                                      title={projTitle}
+                                      className="w-full h-full border-0"
+                                      allowFullScreen
+                                    />
+                                  ) : (
+                                    <video
+                                      src={projSub.demoVideoUrl}
+                                      controls
+                                      className="w-full h-full object-cover"
+                                      poster={student.avatar}
+                                    />
+                                  )}
+                                  <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[9px] font-mono text-white border border-white/20">
+                                    Project Demo
+                                  </div>
+                                </div>
+                                <div className="p-3.5 bg-slate-900 border-t border-white/10 flex items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <h5 className="text-xs font-bold text-white truncate">{projTitle}</h5>
+                                    <p className="text-[10px] text-slate-400 truncate">
+                                      {projSub.demoVideoName || "Project Walkthrough & Keynote"}
+                                    </p>
+                                  </div>
+                                  {projSub.demoVideoUrl && (
+                                    <a
+                                      href={projSub.demoVideoUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs shrink-0 flex items-center gap-1"
+                                      title="Open Video in New Tab"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
-                {/* Right Card: Presentation Evaluation (Expands full-width in Print / Download Report) */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between print:col-span-1 print:w-full break-inside-avoid print:block">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center justify-between">
-                      <span>Presentation Evaluation</span>
-                      <span className="hidden print:inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">
-                        Evaluated Score: 87.8 / 100
-                      </span>
-                    </h4>
-                    <div className="h-44 w-full print:h-40">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={data.presentationScores} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} barSize={34}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                          <XAxis dataKey="category" tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} />
-                          <YAxis domain={[70, 100]} tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} />
-                          <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "11px" }} />
-                          <Bar dataKey="score" radius={[4, 4, 0, 0]}>
-                            {data.presentationScores.map((_, idx) => (
-                              <Cell key={idx} fill={idx === 3 ? "#10b981" : "#4f46e5"} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 print:grid-cols-1 gap-4">
+                      {/* Left Card: Video Player & Interactive Buttons (Hidden in Download Report / Print) */}
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between print:hidden">
+                        <div className="relative aspect-video rounded-xl bg-slate-900 overflow-hidden flex items-center justify-center p-4">
+                          {/* Top Badges */}
+                          <div className="absolute top-3 left-3 flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                              RECORDED
+                            </span>
+                          </div>
+                          <div className="absolute top-3 right-3 text-white/80 font-mono text-[10px]">
+                            38:24
+                          </div>
 
-                  {/* Overall Score Progress Bar */}
-                  <div className="pt-4 mt-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="font-bold text-slate-700">Overall Presentation Score</span>
-                      <span className="text-base font-black text-indigo-600">87.8 / 100</span>
-                    </div>
-                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
-                      <div className="h-full bg-indigo-600 rounded-full" style={{ width: "87.8%" }} />
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      Evaluated by 3-member panel: Lead Instructor + 2 Industry Advisors
-                    </p>
-                  </div>
+                          {/* Center Play Button */}
+                          <button
+                            onClick={() => setVideoPlaying(!videoPlaying)}
+                            className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-500 transition shadow-lg cursor-pointer"
+                          >
+                            {videoPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
+                          </button>
 
-                  {/* Verified Deliverables Artifacts (Neat Document Format for Print & Review) */}
-                  <div className="pt-4 mt-3 border-t border-slate-100">
-                    <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Verified Capstone Project Deliverables</span>
+                          {/* Bottom Controls */}
+                          <div className="absolute bottom-3 left-4 right-4 text-white">
+                            <div className="text-xs font-bold truncate mb-1">
+                              Capstone Defense — AI-Powered Learning Analytics Platform
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-white/70">
+                              <span>14:32</span>
+                              <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-500 rounded-full" style={{ width: "38%" }} />
+                              </div>
+                              <span>38:24</span>
+                              <Volume2 className="w-3 h-3 ml-1" />
+                              <Maximize2 className="w-3 h-3" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 4 Asset Buttons */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+                          <button
+                            onClick={() => triggerToast("GitHub repository opened.")}
+                            className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Github className="w-3.5 h-3.5" />
+                            <span>GitHub Repo</span>
+                          </button>
+                          <button
+                            onClick={() => triggerToast("Live production demo opened.")}
+                            className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Globe className="w-3.5 h-3.5" />
+                            <span>Live Demo</span>
+                          </button>
+                          <button
+                            onClick={() => triggerToast("Presentation slide deck opened.")}
+                            className="px-3 py-2 rounded-xl bg-fuchsia-600 text-white text-xs font-bold hover:bg-fuchsia-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Presentation className="w-3.5 h-3.5" />
+                            <span>Slide Deck</span>
+                          </button>
+                          <button
+                            onClick={() => triggerToast("API Swagger documentation opened.")}
+                            className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>API Docs</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right Card: Presentation Evaluation (Expands full-width in Print / Download Report) */}
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between print:col-span-1 print:w-full break-inside-avoid print:block">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center justify-between">
+                            <span>Presentation Evaluation</span>
+                            <span className="hidden print:inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">
+                              Evaluated Score: {data.moduleScores?.find(m => m.id === "09")?.score || 88} / 100
+                            </span>
+                          </h4>
+                          <div className="h-44 w-full print:h-40">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={data.presentationScores} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} barSize={34}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                <XAxis dataKey="category" tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} />
+                                <YAxis domain={[70, 100]} tick={{ fontSize: 9, fill: "#94a3b8" }} tickLine={false} />
+                                <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", fontSize: "11px" }} />
+                                <Bar dataKey="score" radius={[4, 4, 0, 0]}>
+                                  {data.presentationScores.map((_, idx) => (
+                                    <Cell key={idx} fill={idx === 3 ? "#10b981" : "#4f46e5"} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Overall Score Progress Bar */}
+                        <div className="pt-4 mt-2 border-t border-slate-100">
+                          <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className="font-bold text-slate-700">Overall Presentation Score</span>
+                            <span className="text-base font-black text-indigo-600">
+                              {data.moduleScores?.find(m => m.id === "09")?.score || 88} / 100
+                            </span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
+                            <div
+                              className="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                              style={{ width: `${data.moduleScores?.find(m => m.id === "09")?.score || 88}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            Evaluated by 3-member panel: Lead Instructor + 2 Industry Advisors
+                          </p>
+                        </div>
+
+                        {/* Verified Deliverables Artifacts (Neat Document Format for Print & Review) */}
+                        <div className="pt-4 mt-3 border-t border-slate-100">
+                          <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Verified Capstone Project Deliverables</span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                              <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px] mb-0.5">
+                                <Github className="w-3 h-3 text-slate-700" />
+                                <span>Repository</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">github.com/mind2i/analytics</p>
+                              <span className="inline-block mt-1 text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">142 Commits • Verified</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                              <div className="flex items-center gap-1.5 font-bold text-indigo-800 text-[11px] mb-0.5">
+                                <Globe className="w-3 h-3 text-indigo-600" />
+                                <span>Live Demo</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">analytics.mind2i.internal</p>
+                              <span className="inline-block mt-1 text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">Production Active</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                              <div className="flex items-center gap-1.5 font-bold text-fuchsia-800 text-[11px] mb-0.5">
+                                <Presentation className="w-3 h-3 text-fuchsia-600" />
+                                <span>Slide Deck</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">defense-presentation-v4.pdf</p>
+                              <span className="inline-block mt-1 text-[9px] font-semibold text-fuchsia-600 bg-fuchsia-50 px-1.5 py-0.5 rounded">24 Slides • Reviewed</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-800 text-[11px] mb-0.5">
+                                <FileText className="w-3 h-3 text-emerald-600" />
+                                <span>API Docs</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">OpenAPI 3.1 Specification</p>
+                              <span className="inline-block mt-1 text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">18 Endpoints • Tested</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px] mb-0.5">
-                          <Github className="w-3 h-3 text-slate-700" />
-                          <span>Repository</span>
+
+                    {/* Intern Uploaded Technical Artifacts & Whitepaper Vault */}
+                    {effectiveResources.length > 0 && (
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3 break-inside-avoid">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <FolderGit2 className="w-4 h-4 text-indigo-600" />
+                            <h4 className="text-sm font-black text-slate-900">
+                              Uploaded Technical Documents, Presentations &amp; Architecture Blueprints
+                            </h4>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {effectiveResources.filter(r => typeof r.aiRating === "number" && r.aiRating > 0).length} of {effectiveResources.length} Artifacts Verified
+                          </span>
                         </div>
-                        <p className="text-[10px] text-slate-500 truncate">github.com/mind2i/analytics</p>
-                        <span className="inline-block mt-1 text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">142 Commits • Verified</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="flex items-center gap-1.5 font-bold text-indigo-800 text-[11px] mb-0.5">
-                          <Globe className="w-3 h-3 text-indigo-600" />
-                          <span>Live Demo</span>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {effectiveResources.map((res, idx) => {
+                            const isAnalyzed = typeof res.aiRating === "number" && res.aiRating > 0;
+                            return (
+                              <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col justify-between space-y-2.5">
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-white text-indigo-700 border border-indigo-100">
+                                      {res.type}
+                                    </span>
+                                    {isAnalyzed ? (
+                                      <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                                        <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                        Admin Verified: {res.aiRating}%
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                                        <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                        Submitted • Awaiting Admin Audit
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h5 className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug pt-1">
+                                    {res.title}
+                                  </h5>
+                                  {res.description && (
+                                    <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                                      {res.description}
+                                    </p>
+                                  )}
+                                  {res.aiAuditSummary && (
+                                    <div className="p-2 rounded-lg bg-indigo-50/70 border border-indigo-100 text-[10px] text-indigo-900 leading-snug mt-1.5">
+                                      <strong className="text-indigo-950 font-bold block text-[9px] uppercase mb-0.5">Faculty AI Audit:</strong>
+                                      {res.aiAuditSummary}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-400">
+                                  <span>{res.fileSize || "PDF"} • {res.uploadedAt || "Verified"}</span>
+                                  <a
+                                    href={res.fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 rounded bg-white text-indigo-600 hover:text-indigo-800 border border-slate-200"
+                                    title="Open Document"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <p className="text-[10px] text-slate-500 truncate">analytics.mind2i.internal</p>
-                        <span className="inline-block mt-1 text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">Production Active</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="flex items-center gap-1.5 font-bold text-fuchsia-800 text-[11px] mb-0.5">
-                          <Presentation className="w-3 h-3 text-fuchsia-600" />
-                          <span>Slide Deck</span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">defense-presentation-v4.pdf</p>
-                        <span className="inline-block mt-1 text-[9px] font-semibold text-fuchsia-600 bg-fuchsia-50 px-1.5 py-0.5 rounded">24 Slides • Reviewed</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="flex items-center gap-1.5 font-bold text-emerald-800 text-[11px] mb-0.5">
-                          <FileText className="w-3 h-3 text-emerald-600" />
-                          <span>API Docs</span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">OpenAPI 3.1 Specification</p>
-                        <span className="inline-block mt-1 text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">18 Endpoints • Tested</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
-                </div>
-              </div>
+                );
+              })()}
             </section>
 
             {/* ═════════════════════════════════════════════════════════════ */}
@@ -5293,52 +5607,87 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                 <div className="space-y-4 flex flex-col justify-between">
                   {/* Reflection Video Card (Screen Only - Hidden in Download Report) */}
                   <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs print:hidden">
-                    <div className="relative aspect-video rounded-xl bg-slate-900 overflow-hidden flex items-center justify-center p-4">
-                      <div className="absolute top-3 left-3">
-                        <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider">
-                          RECORDED
+                    <div className="relative aspect-video rounded-xl bg-slate-900 overflow-hidden flex items-center justify-center">
+                      {effectiveReflectionVideo?.videoUrl ? (
+                        effectiveReflectionVideo.videoUrl.includes("youtube.com") || effectiveReflectionVideo.videoUrl.includes("youtu.be") ? (
+                          <iframe
+                            src={effectiveReflectionVideo.videoUrl.replace("watch?v=", "embed/").replace("youtu.be/", "youtube.com/embed/")}
+                            title="Reflection Video"
+                            className="w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        ) : (
+                          <video
+                            src={effectiveReflectionVideo.videoUrl}
+                            controls
+                            className="w-full h-full object-cover"
+                            poster={student.avatar}
+                          />
+                        )
+                      ) : (
+                        <div className="w-full h-full p-4 flex items-center justify-center relative">
+                          <div className="absolute top-3 left-3">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider">
+                              RECORDED
+                            </span>
+                          </div>
+                          <div className="absolute top-3 right-3 text-white/80 font-mono text-[10px]">
+                            {effectiveReflectionVideo?.duration || "22:15"}
+                          </div>
+
+                          <button
+                            onClick={() => setReflectionVideoPlaying(!reflectionVideoPlaying)}
+                            className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-500 transition shadow-lg cursor-pointer"
+                          >
+                            {reflectionVideoPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
+                          </button>
+
+                          <div className="absolute bottom-3 left-4 right-4 text-white">
+                            <div className="text-xs font-bold truncate mb-1">
+                              {effectiveReflectionVideo?.title || "Personal Reflection — My Journey from Beginner to AI Engineer"}
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-white/70">
+                              <span>14:32</span>
+                              <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-500 rounded-full" style={{ width: "65%" }} />
+                              </div>
+                              <span>{effectiveReflectionVideo?.duration || "22:15"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {effectiveReflectionVideo?.title && (
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-xs font-bold text-slate-800 truncate">{effectiveReflectionVideo.title}</p>
+                          <p className="text-[10px] text-slate-400">Duration: {effectiveReflectionVideo.duration || "18:42"} • Recorded Video Portfolio</p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase shrink-0">
+                          AI Analyzed
                         </span>
                       </div>
-                      <div className="absolute top-3 right-3 text-white/80 font-mono text-[10px]">
-                        22:15
-                      </div>
-
-                      <button
-                        onClick={() => setReflectionVideoPlaying(!reflectionVideoPlaying)}
-                        className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-500 transition shadow-lg cursor-pointer"
-                      >
-                        {reflectionVideoPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
-                      </button>
-
-                      <div className="absolute bottom-3 left-4 right-4 text-white">
-                        <div className="text-xs font-bold truncate mb-1">
-                          Personal Reflection — My Journey from Beginner to AI Engineer
-                        </div>
-                        <div className="flex items-center gap-2 text-[10px] font-mono text-white/70">
-                          <span>14:32</span>
-                          <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
-                            <div className="h-full bg-indigo-500 rounded-full" style={{ width: "65%" }} />
-                          </div>
-                          <span>22:15</span>
-                        </div>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Key Reflections & Timestamps Card (Always visible, symmetrically aligned in print) */}
-                  <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex-1 flex flex-col justify-between">
+                  <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex-1 flex flex-col justify-between space-y-4">
                     <div>
                       <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 mb-3 flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                         <span>Key Reflections &amp; Developmental Milestones</span>
                       </h4>
                       <div className="space-y-3">
-                        {[
-                          { time: "02:14", desc: "Initial fears about AI complexity and how the program structure helped build confidence incrementally." },
-                          { time: "07:38", desc: "The breakthrough moment during the first NLP sprint — debugging a tokenizer bug that led to deeper PyTorch understanding." },
-                          { time: "13:22", desc: "Collaborating with peers from different technical backgrounds shaped a more holistic engineering mindset." },
-                          { time: "18:50", desc: "Transition from writing code to designing systems — the architectural shift in thinking during M4." },
-                        ].map((item, i) => (
+                        {(effectiveReflectionVideo?.aiMilestones && effectiveReflectionVideo.aiMilestones.length > 0
+                          ? effectiveReflectionVideo.aiMilestones
+                          : [
+                              { time: "02:14", desc: "Initial fears about AI complexity and how the program structure helped build confidence incrementally." },
+                              { time: "07:38", desc: "The breakthrough moment during the first NLP sprint — debugging a tokenizer bug that led to deeper PyTorch understanding." },
+                              { time: "13:22", desc: "Collaborating with peers from different technical backgrounds shaped a more holistic engineering mindset." },
+                              { time: "18:50", desc: "Transition from writing code to designing systems — the architectural shift in thinking during M4." },
+                            ]
+                        ).map((item, i) => (
                           <div key={i} className="flex items-start gap-2.5 text-xs">
                             <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[10px] font-bold shrink-0">
                               {item.time}
@@ -5349,10 +5698,23 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                           </div>
                         ))}
                       </div>
+
+                      {/* AI Reflection Summary if present */}
+                      {effectiveReflectionVideo?.aiSummary && (
+                        <div className="mt-4 p-3 bg-violet-50/80 rounded-xl border border-violet-100 text-xs">
+                          <p className="font-bold text-violet-900 mb-1 flex items-center gap-1.5">
+                            <BrainCircuit className="w-3.5 h-3.5 text-violet-600" />
+                            <span>AI Reflection Synthesis &amp; Growth Analysis</span>
+                          </p>
+                          <p className="text-slate-700 italic leading-relaxed">
+                            "{effectiveReflectionVideo.aiSummary}"
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Print & Review Reflection Summary Pill */}
-                    <div className="pt-3 mt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                       <span className="text-slate-500 font-medium">Self-Awareness &amp; Growth:</span>
                       <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px]">
                         Top 5% Cohort Reflection Maturity
@@ -5397,9 +5759,21 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
                     </div>
                   </div>
 
-                  <p className="text-xs text-slate-500 leading-relaxed mt-4 pt-3 border-t border-slate-100">
-                    {student.name.split(" ")[0]} demonstrates strong verbal communication with a natural fluency and confident delivery. Her structured approach to explaining technical concepts is notable — she consistently situates solutions within business context before detailing implementation.
-                  </p>
+                  <div className="space-y-2.5 mt-4 pt-3 border-t border-slate-100">
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      {effectiveEvaluation?.communicationNotes || (
+                        <>
+                          {student.name.split(" ")[0]} demonstrates strong verbal communication with a natural fluency and confident delivery. Her structured approach to explaining technical concepts is notable — she consistently situates solutions within business context before detailing implementation.
+                        </>
+                      )}
+                    </p>
+                    {effectiveEvaluation?.fluencyNotes && (
+                      <div className="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 text-xs text-indigo-950">
+                        <span className="font-bold text-indigo-800">Fluency &amp; Articulation Note: </span>
+                        <span>{effectiveEvaluation.fluencyNotes}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </section>
@@ -5732,37 +6106,245 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
               </div>
 
               {/* Full Width Card: Official Program Appraisal */}
-              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs break-inside-avoid">
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-100">
+              <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs break-inside-avoid space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
                   <div>
-                    <h4 className="text-base font-black text-slate-900">
-                      Official Program Appraisal
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      Prepared by: {mentorName}, Program Director · {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-black text-slate-900">
+                        Official Program Appraisal &amp; Faculty Assessment
+                      </h4>
+                      {panelConsensusAverage && panelConsensusAverage.count > 1 ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black uppercase tracking-wide flex items-center gap-1">
+                          <Users className="w-3 h-3 text-emerald-600" />
+                          <span>Consensus Average ({panelConsensusAverage.count} Faculty Reviews)</span>
+                        </span>
+                      ) : effectiveEvaluation ? (
+                        <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200 text-[10px] font-black uppercase">
+                          AI Verified Review
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Prepared by: <strong className="text-slate-800">{effectiveEvaluation?.reviewerName || mentorName}</strong> · {effectiveEvaluation?.evaluatedAt || new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </p>
                   </div>
 
-                  <div className="px-3.5 py-1.5 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs">
-                    <CheckSquare className="w-3.5 h-3.5" />
-                    <span>Hiring Status: Ready for Senior Associate</span>
+                  <div className="flex items-center gap-2">
+                    {panelConsensusAverage && (
+                      <div className="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-black">
+                        Panel Composite: {panelConsensusAverage.avgOverall}%
+                      </div>
+                    )}
+                    <div className="px-3.5 py-1.5 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs">
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>{effectiveEvaluation?.aiVerdict || "Hiring Status: Ready for Senior Associate"}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
-                  <p>
-                    <strong className="text-slate-900 capitalize">{student.name}</strong> has completed the <strong className="text-indigo-600">{trackTitle}</strong> program with distinction, achieving a cumulative performance score of <strong>{data.cumulativeScore}%</strong> — placing them in the <strong>top 3% of graduates</strong> in <span className="font-mono font-bold text-slate-800">{cohortId}</span>. Their progression throughout the program has been marked by consistent intellectual rigor, an uncommon capacity for independent research, and a genuine commitment to the craft of software engineering.
-                  </p>
-                  <p>
-                    Their strongest demonstrated competencies are in full-stack AI system design and API architecture, where their capstone project — an AI-powered learning analytics platform serving real institutional clients — achieved production deployment within the program timeline. The system, built end-to-end in Next.js, FastAPI, PyTorch, and PostgreSQL, processes over 15,000 learner interaction events daily and has been adopted as an internal tool by two cohort partners.
-                  </p>
-                  <p>
-                    Areas identified for continued growth include advanced distributed systems design at scale and formal DevOps pipeline engineering — both of which are addressed in the structured 30-60-90 day plan above. These represent expanding edges rather than deficiencies, and {student.name.split(" ")[0]} has already demonstrated proactive self-study habits that will serve them well in closing these gaps.
-                  </p>
-                  <p>
-                    It is the formal recommendation of the MIND2I Academy program faculty that {student.name} be considered for placement at the <strong className="text-slate-900">Senior Associate Engineer</strong> level, specifically in teams working at the intersection of backend systems, data engineering, and AI product development. They bring not only technical capability, but the professional presence and communication clarity essential for high-velocity engineering teams.
-                  </p>
-                </div>
+                {effectiveEvaluation ? (
+                  <div className="space-y-4">
+                    {/* 4 Dimension Evaluation Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                            <MessageSquare className="w-3.5 h-3.5 text-cyan-600" />
+                            <span>Communication</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-100 text-cyan-800 border border-cyan-200">
+                            {effectiveEvaluation.communicationScore}%
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          {effectiveEvaluation.communicationNotes}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                            <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Grammar &amp; Technical Docs</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            {effectiveEvaluation.grammarScore}%
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          {effectiveEvaluation.grammarNotes}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                            <Presentation className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Fluency &amp; Defense</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                            {effectiveEvaluation.fluencyScore}%
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          {effectiveEvaluation.fluencyNotes}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                            <FolderKanban className="w-3.5 h-3.5 text-blue-600" />
+                            <span>Project Execution</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">
+                            {effectiveEvaluation.projectScore}%
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          {effectiveEvaluation.projectNotes}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Multi-Admin Faculty Review Breakdown (Consensus Transparency) */}
+                    {panelConsensusAverage && panelConsensusAverage.count > 1 && (
+                      <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3 shadow-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-indigo-400" />
+                            <span className="text-xs font-black text-white">
+                              Multi-Admin Faculty Panel ({panelConsensusAverage.count} Evaluators Recorded)
+                            </span>
+                          </div>
+                          <div className="px-2.5 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[11px] font-black">
+                            Arithmetic Mean: {panelConsensusAverage.avgOverall}% Consensus
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                          {panelConsensusAverage.evaluators.map((evalItem, idx) => (
+                            <div
+                              key={evalItem.id || idx}
+                              className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400 block truncate">
+                                    {evalItem.evaluationName || "Faculty Appraisal"}
+                                  </span>
+                                  <span className="text-xs font-black text-white truncate block">
+                                    {evalItem.reviewerName}
+                                  </span>
+                                </div>
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-500/30 text-emerald-300 text-[10px] font-black shrink-0">
+                                  {evalItem.overallRating || 90}%
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-300 truncate">
+                                {evalItem.reviewerRole || "Faculty Reviewer"}
+                              </p>
+                              <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
+                                <span>{evalItem.evaluatedAt || "Verified"}</span>
+                                <span className="text-slate-300">
+                                  C:{evalItem.communicationScore}% · G:{evalItem.grammarScore}% · P:{evalItem.projectScore}%
+                                </span>
+                              </div>
+                              {evalItem.customNotes && (
+                                <p className="text-[10px] text-slate-300 line-clamp-2 italic pt-0.5">
+                                  "{evalItem.customNotes}"
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="text-[10px] text-slate-400 flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                          <span className="font-bold text-slate-300">Consensus Formula:</span>
+                          <span>
+                            Sum of ratings ({panelConsensusAverage.evaluators.map((e) => `${e.overallRating || 90}%`).join(" + ")}) ÷ {panelConsensusAverage.count} = <strong className="text-emerald-300">{panelConsensusAverage.avgOverall}% Average Composite</strong>
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Executive Summary Narrative */}
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                        AI Executive Appraisal Summary
+                      </span>
+                      <p className="text-xs text-slate-700 leading-relaxed">
+                        {effectiveEvaluation.aiSummary}
+                      </p>
+                    </div>
+
+                    {/* Lead Mentor Custom Remarks */}
+                    {effectiveEvaluation.customNotes && (
+                      <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-800 block">
+                          Lead Mentor Observations &amp; Custom Program Remarks
+                        </span>
+                        <p className="text-xs text-indigo-950 leading-relaxed font-medium">
+                          {effectiveEvaluation.customNotes}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Strengths & Growth Areas Chips */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {effectiveEvaluation.aiStrengths && effectiveEvaluation.aiStrengths.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 block">
+                            Key Demonstrated Competencies
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {effectiveEvaluation.aiStrengths.map((str, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold"
+                              >
+                                • {str}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {effectiveEvaluation.aiGrowthAreas && effectiveEvaluation.aiGrowthAreas.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 block">
+                            Continued Growth Focus
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {effectiveEvaluation.aiGrowthAreas.map((gro, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold"
+                              >
+                                • {gro}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+                    <p>
+                      <strong className="text-slate-900 capitalize">{student.name}</strong> has completed the <strong className="text-indigo-600">{trackTitle}</strong> program with distinction, achieving a cumulative performance score of <strong>{data.cumulativeScore}%</strong> — placing them in the <strong>top 3% of graduates</strong> in <span className="font-mono font-bold text-slate-800">{cohortId}</span>. Their progression throughout the program has been marked by consistent intellectual rigor, an uncommon capacity for independent research, and a genuine commitment to the craft of software engineering.
+                    </p>
+                    <p>
+                      Their strongest demonstrated competencies are in full-stack AI system design and API architecture, where their capstone project — an AI-powered learning analytics platform serving real institutional clients — achieved production deployment within the program timeline. The system, built end-to-end in Next.js, FastAPI, PyTorch, and PostgreSQL, processes over 15,000 learner interaction events daily and has been adopted as an internal tool by two cohort partners.
+                    </p>
+                    <p>
+                      Areas identified for continued growth include advanced distributed systems design at scale and formal DevOps pipeline engineering — both of which are addressed in the structured 30-60-90 day plan above. These represent expanding edges rather than deficiencies, and {student.name.split(" ")[0]} has already demonstrated proactive self-study habits that will serve them well in closing these gaps.
+                    </p>
+                    <p>
+                      It is the formal recommendation of the MIND2I Academy program faculty that {student.name} be considered for placement at the <strong className="text-slate-900">Senior Associate Engineer</strong> level, specifically in teams working at the intersection of backend systems, data engineering, and AI product development. They bring not only technical capability, but the professional presence and communication clarity essential for high-velocity engineering teams.
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
 

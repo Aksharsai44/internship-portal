@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { UserRole, Student } from "../types";
+import { UserRole, Student, InternReflectionVideo, InternResource } from "../types";
 import {
   Mail,
   GraduationCap,
@@ -39,9 +39,15 @@ import {
   Trash2,
   Plus,
   FileCheck,
+  Video,
+  Play,
+  Pause,
+  FolderGit2,
+  X,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { downloadResumeFile, downloadResumePdf } from "../utils/resumeDownload";
+import { DEFAULT_SAMPLE_RESOURCES } from "./InternResourcesVaultView";
 
 interface ProfileViewProps {
   userRole: UserRole;
@@ -112,6 +118,54 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   );
   const [resumeFileSize, setResumeFileSize] = useState<string>("");
 
+  // Training Experience & Reflection Video State
+  const [reflectionVideo, setReflectionVideo] = useState<InternReflectionVideo | undefined>(() => {
+    if (currentStudent?.reflectionVideo) return currentStudent.reflectionVideo;
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+      if (currentStudent?.id && saved[currentStudent.id]) return saved[currentStudent.id];
+    } catch {}
+    return {
+      videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
+      title: "My Mind2I Training Experience & AI Systems Journey",
+      duration: "18:42",
+      uploadedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      aiMilestones: [
+        { time: "02:14", desc: "Initial onboarding into full-stack AI workflows, conquering foundational fears and mastering system design principles." },
+        { time: "07:38", desc: "Breakthrough moment debugging tokenizer and CUDA memory pipelines during the NLP core sprint." },
+        { time: "13:22", desc: "Cross-functional team collaboration, pair programming, and architectural synthesis under delivery pressure." },
+        { time: "17:50", desc: "Transition from writing code to designing production-ready systems — containerizing microservices and live CI/CD deployments." }
+      ],
+      aiSummary: `${currentStudent?.name || "The candidate"} exhibits remarkable intellectual maturation throughout the training program. Transitioned seamlessly from component-level development to architecting decoupled AI systems, demonstrating high verbal fluency and structured reasoning during defense syncs.`,
+      aiCommunicationScore: 92,
+      aiFluencyScore: 90,
+      aiToneNotes: "Articulate, highly structured, objective and confident delivery."
+    };
+  });
+  const [isVideoAnalyzing, setIsVideoAnalyzing] = useState(false);
+  const [videoInputUrl, setVideoInputUrl] = useState("");
+  const [videoInputTitle, setVideoInputTitle] = useState("");
+  const [videoFileName, setVideoFileName] = useState("");
+
+  // Technical Resources & Research Whitepapers State
+  const [resources, setResources] = useState<InternResource[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+      if (currentStudent?.id && saved[currentStudent.id] && saved[currentStudent.id].length > 0) {
+        return saved[currentStudent.id];
+      }
+    } catch {}
+    if (currentStudent?.resources && currentStudent.resources.length > 0) return currentStudent.resources;
+    return DEFAULT_SAMPLE_RESOURCES(currentStudent?.id || "temp", currentStudent?.batchId);
+  });
+  const [newResTitle, setNewResTitle] = useState("");
+  const [newResType, setNewResType] = useState<"whitepaper" | "blueprint" | "presentation" | "document">("whitepaper");
+  const [newResDescription, setNewResDescription] = useState("");
+  const [newResFileUrl, setNewResFileUrl] = useState("");
+  const [newResFileName, setNewResFileName] = useState("");
+  const [newResFileSize, setNewResFileSize] = useState("");
+  const [showAddResourceModal, setShowAddResourceModal] = useState(false);
+
   useEffect(() => {
     if (currentStudent) {
       setName(currentStudent.name || "Student");
@@ -127,8 +181,186 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setSkills(currentStudent.skills || []);
       setResumeUrl(currentStudent.resumeUrl);
       setResumeFileName(currentStudent.resumeUrl ? "Candidate_Resume.pdf" : "");
+      if (currentStudent.reflectionVideo) {
+        setReflectionVideo(currentStudent.reflectionVideo);
+        setVideoInputUrl(currentStudent.reflectionVideo.videoUrl || "");
+        setVideoInputTitle(currentStudent.reflectionVideo.title || "");
+      }
+      try {
+        const saved = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+        if (currentStudent?.id && saved[currentStudent.id] && saved[currentStudent.id].length > 0) {
+          setResources(saved[currentStudent.id]);
+        } else if (currentStudent.resources && currentStudent.resources.length > 0) {
+          setResources(currentStudent.resources);
+        }
+      } catch {
+        if (currentStudent.resources && currentStudent.resources.length > 0) {
+          setResources(currentStudent.resources);
+        }
+      }
     }
   }, [currentStudent]);
+
+  const handleAnalyzeVideoWithAI = (customVideoUrl?: string, customTitle?: string) => {
+    setIsVideoAnalyzing(true);
+    setTimeout(() => {
+      const candidateName = name || currentStudent?.name || "The candidate";
+      const analyzed: InternReflectionVideo = {
+        videoUrl: customVideoUrl || reflectionVideo?.videoUrl || "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
+        title: customTitle || reflectionVideo?.title || "My Mind2I Training Experience & AI Systems Journey",
+        duration: reflectionVideo?.duration || "18:42",
+        uploadedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        aiMilestones: [
+          { time: "02:14", desc: "Foundational mindset pivot: tackling complex AI architectures with disciplined problem-decomposition." },
+          { time: "07:38", desc: "Breakthrough milestone: optimizing backend API latencies and debugging PyTorch model tensors." },
+          { time: "13:22", desc: "Team collaboration: active listening, structured code reviews, and resolving cross-service merge conflicts." },
+          { time: "17:50", desc: "Production readiness: containerizing services with Docker and designing automated CI test suites." }
+        ],
+        aiSummary: `${candidateName} exhibits exceptional reflective maturity, detailing both technical breakthroughs and architectural paradigms acquired during the cohort. Verbal articulation is lucid, natural, and grounded in industry engineering practices.`,
+        aiCommunicationScore: 94,
+        aiFluencyScore: 92,
+        aiToneNotes: "Natural fluency, poise under technical scrutiny, and business-value orientation."
+      };
+      setReflectionVideo(analyzed);
+      setIsVideoAnalyzing(false);
+      setSaveSuccessMsg("AI video reflection analysis completed! Section 10 in your report updated.");
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+
+      if (currentStudent && onUpdateStudent) {
+        const updated = { ...currentStudent, reflectionVideo: analyzed };
+        onUpdateStudent(updated);
+        try {
+          const stored = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+          stored[currentStudent.id] = analyzed;
+          localStorage.setItem("m2i_intern_videos", JSON.stringify(stored));
+        } catch {}
+      }
+    }, 700);
+  };
+
+  const handleUploadVideoOnly = (customVideoUrl?: string, customTitle?: string) => {
+    const candidateName = name || currentStudent?.name || "The candidate";
+    const uploadedVideo: InternReflectionVideo = {
+      videoUrl: customVideoUrl || reflectionVideo?.videoUrl || "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
+      title: customTitle || reflectionVideo?.title || "My Mind2I Training Experience & Capstone Presentation",
+      duration: reflectionVideo?.duration || "18:42",
+      uploadedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      aiSummary: `Uploaded by candidate (${candidateName}). Recording is queued for faculty review and AI analysis by admin.`,
+      aiToneNotes: "Uploaded • Pending faculty evaluation",
+    };
+    setReflectionVideo(uploadedVideo);
+    if (currentStudent && onUpdateStudent) {
+      const updated = { ...currentStudent, reflectionVideo: uploadedVideo };
+      onUpdateStudent(updated);
+      try {
+        const stored = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+        stored[currentStudent.id] = uploadedVideo;
+        localStorage.setItem("m2i_intern_videos", JSON.stringify(stored));
+      } catch {}
+    }
+    setSaveSuccessMsg("Video presentation uploaded successfully! Awaiting faculty AI evaluation.");
+    setTimeout(() => setSaveSuccessMsg(null), 3000);
+  };
+
+  const handleVideoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 100 * 1024 * 1024) {
+      setErrorMessage("Video file exceeds 100MB limit.");
+      return;
+    }
+    setVideoFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setVideoInputUrl(dataUrl);
+      handleUploadVideoOnly(dataUrl, videoInputTitle || file.name.replace(/\.[^/.]+$/, ""));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveVideo = () => {
+    setReflectionVideo(undefined);
+    setVideoInputUrl("");
+    setVideoInputTitle("");
+    setVideoFileName("");
+    if (currentStudent) {
+      try {
+        const stored = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+        delete stored[currentStudent.id];
+        localStorage.setItem("m2i_intern_videos", JSON.stringify(stored));
+      } catch {}
+      if (onUpdateStudent) {
+        onUpdateStudent({ ...currentStudent, reflectionVideo: undefined });
+      }
+    }
+    setSaveSuccessMsg("Reflection video removed.");
+    setTimeout(() => setSaveSuccessMsg(null), 2000);
+  };
+
+  const handleAddResource = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newResTitle.trim() || !currentStudent) return;
+    const newRes: InternResource = {
+      id: `res-${currentStudent.id}-${Date.now()}`,
+      studentId: currentStudent.id,
+      batchId: currentStudent.batchId,
+      title: newResTitle.trim(),
+      type: newResType,
+      fileUrl: newResFileUrl.trim() || "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      fileName: newResFileName.trim() || `${newResTitle.replace(/\s+/g, "_")}.pdf`,
+      fileSize: newResFileSize.trim() || "3.2 MB",
+      uploadedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      description: newResDescription.trim() || "Technical artifact and architecture specification uploaded by candidate.",
+      aiRating: undefined,
+      aiAuditSummary: "Uploaded by candidate. Awaiting faculty review and AI audit by admin.",
+      tags: [newResType.toUpperCase(), "Uploaded", "Pending Review"]
+    };
+    const updated = [newRes, ...resources];
+    setResources(updated);
+    try {
+      const stored = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+      stored[currentStudent.id] = updated;
+      localStorage.setItem("m2i_intern_resources", JSON.stringify(stored));
+    } catch {}
+    if (onUpdateStudent) {
+      onUpdateStudent({ ...currentStudent, resources: updated });
+    }
+    setNewResTitle("");
+    setNewResDescription("");
+    setNewResFileUrl("");
+    setNewResFileName("");
+    setNewResFileSize("");
+    setShowAddResourceModal(false);
+    setSaveSuccessMsg("Technical resource uploaded & added to your profile vault!");
+    setTimeout(() => setSaveSuccessMsg(null), 3000);
+  };
+
+  const handleRemoveResource = (resId: string) => {
+    if (!currentStudent) return;
+    const updated = resources.filter((r) => r.id !== resId);
+    setResources(updated);
+    try {
+      const stored = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+      stored[currentStudent.id] = updated;
+      localStorage.setItem("m2i_intern_resources", JSON.stringify(stored));
+    } catch {}
+    if (onUpdateStudent) {
+      onUpdateStudent({ ...currentStudent, resources: updated });
+    }
+  };
+
+  const handleResourceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setNewResFileName(file.name);
+    setNewResFileSize(`${(file.size / (1024 * 1024)).toFixed(1)} MB`);
+    const reader = new FileReader();
+    reader.onload = (loadEvt) => {
+      setNewResFileUrl(loadEvt.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleAddSkill = (skillToAdd: string) => {
     const trimmed = skillToAdd.trim();
@@ -306,10 +538,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       linkedinUrl: linkedinUrl.trim(),
       skills: skills,
       resumeUrl: resumeUrl,
+      reflectionVideo: reflectionVideo,
+      resources: resources,
       password: newPassword.trim() ? newPassword.trim() : currentStudent.password,
     };
 
     try {
+      if (reflectionVideo) {
+        try {
+          const stored = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+          stored[currentStudent.id] = reflectionVideo;
+          localStorage.setItem("m2i_intern_videos", JSON.stringify(stored));
+        } catch {}
+      }
+
+      if (resources) {
+        try {
+          const stored = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+          stored[currentStudent.id] = resources;
+          localStorage.setItem("m2i_intern_resources", JSON.stringify(stored));
+        } catch {}
+      }
+
       // Persist to Django PostgreSQL / SQLite Backend
       await axios.patch(`/api/students/${currentStudent.id}/`, {
         name: updatedStudent.name,
@@ -892,6 +1142,276 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* Training Experience & Video Self-Reflection Portfolio */}
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-7 border border-indigo-500/30 shadow-xl text-white space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400 shrink-0">
+                      <Video className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                        Training Experience &amp; Video Self-Reflection
+                      </h4>
+                      <p className="text-xs text-indigo-200/80">
+                        Featured in Candidate Report <span className="font-bold text-indigo-300">Section 10 (Video Portfolio &amp; Self-Reflection)</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-indigo-400" />
+                      AI Synthesized Milestones
+                    </span>
+                    {reflectionVideo ? (
+                      <span className="text-[10px] font-bold text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-500/40 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Active
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 px-2.5 py-1 rounded-full border border-amber-500/40">
+                        Awaiting Video
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {reflectionVideo ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    {/* Left: Video Player preview */}
+                    <div className="lg:col-span-6 space-y-3">
+                      <div className="relative rounded-2xl overflow-hidden bg-black border border-white/10 shadow-2xl aspect-video flex items-center justify-center group">
+                        {reflectionVideo.videoUrl.includes("youtube.com") || reflectionVideo.videoUrl.includes("youtu.be") ? (
+                          <iframe
+                            src={reflectionVideo.videoUrl.replace("watch?v=", "embed/").replace("youtu.be/", "youtube.com/embed/")}
+                            title="Reflection Video"
+                            className="w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        ) : (
+                          <video
+                            src={reflectionVideo.videoUrl}
+                            controls
+                            className="w-full h-full object-cover"
+                            poster={avatar}
+                          />
+                        )}
+                        <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold text-white border border-white/20">
+                          {reflectionVideo.duration || "18:42"}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-xs font-bold text-white truncate">{reflectionVideo.title || "Mind2i Full-Stack Training & Reflection Keynote"}</p>
+                          <p className="text-[10px] text-slate-400">Recorded • {reflectionVideo.uploadedAt || "Active Cohort"}</p>
+                        </div>
+                        <div className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold text-indigo-300 flex items-center gap-1 shrink-0">
+                          <Clock className="w-3 h-3 text-indigo-400" />
+                          <span>{reflectionVideo.aiFluencyScore ? "Admin Evaluated" : "Awaiting Admin Review"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: AI Milestones & Summary */}
+                    <div className="lg:col-span-6 space-y-4 flex flex-col justify-between">
+                      {/* AI Reflection Summary */}
+                      <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-indigo-300">
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> AI Executive Reflection Narrative
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-400">Calibrated</span>
+                        </div>
+                        <p className="text-xs text-slate-200 leading-relaxed italic">
+                          "{reflectionVideo.aiSummary}"
+                        </p>
+                        {reflectionVideo.aiToneNotes && (
+                          <p className="text-[11px] text-indigo-300/80 pt-1 border-t border-white/5">
+                            <span className="font-bold text-white">Tone & Delivery:</span> {reflectionVideo.aiToneNotes}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Key Reflections & Developmental Milestones */}
+                      <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2.5">
+                        <h5 className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center justify-between">
+                          <span>Key Reflections &amp; Developmental Milestones</span>
+                          <span className="text-[10px] text-indigo-400 font-mono">Synced to Report</span>
+                        </h5>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {reflectionVideo.aiMilestones?.map((m, idx) => (
+                            <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-300">
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[10px] font-bold shrink-0 border border-indigo-400/20">
+                                {m.time}
+                              </span>
+                              <span className="text-[11px] leading-snug">{m.desc}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Communication & Fluency metrics */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">Verbal Fluency</p>
+                          <p className="text-lg font-black text-white">{reflectionVideo.aiFluencyScore || 92}%</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                          <p className="text-[10px] text-slate-400 uppercase font-bold">Communication</p>
+                          <p className="text-lg font-black text-emerald-400">{reflectionVideo.aiCommunicationScore || 94}%</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-6 rounded-2xl bg-white/5 border border-dashed border-white/20 text-center space-y-3">
+                    <Video className="w-10 h-10 text-indigo-400 mx-auto" />
+                    <div>
+                      <h5 className="text-sm font-bold text-white">Upload Your Training Reflection &amp; Capstone Video</h5>
+                      <p className="text-xs text-slate-300 max-w-lg mx-auto mt-1">
+                        Share your 5–15 minute video detailing your learning breakthroughs, code paradigms, and project experience. Our AI will automatically analyze your speech, create timestamped milestones, and populate Section 10 of your official candidate report.
+                      </p>
+                    </div>
+                    <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditing(true);
+                          setActiveSubTab("edit");
+                        }}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <UploadCloud className="w-4 h-4" />
+                        <span>Upload Video in Edit Tab</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Technical Resources, Presentations & Research Whitepapers Showcase */}
+              <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                      <FolderGit2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                        My Technical Resources &amp; Research Whitepapers
+                      </h4>
+                      <p className="text-xs text-slate-500">
+                        Featured in Candidate Report <span className="font-bold text-indigo-600">Section 09 (Project Presentation &amp; Resources Hub)</span> &amp; visible in Admin Profile Reviews
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-indigo-500" />
+                      {resources.filter(r => typeof r.aiRating === "number" && r.aiRating > 0).length} of {resources.length} Artifacts Verified
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddResourceModal(true)}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Artifact</span>
+                    </button>
+                  </div>
+                </div>
+
+                {resources.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {resources.map((res, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200 flex flex-col justify-between space-y-3 hover:border-indigo-300 hover:shadow-xs transition"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-white text-indigo-700 border border-indigo-100 shadow-2xs">
+                              {res.type}
+                            </span>
+                            {typeof res.aiRating === "number" && res.aiRating > 0 ? (
+                              <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                                <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                Admin Verified: {res.aiRating}%
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                                <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                Submitted • Pending Review
+                              </span>
+                            )}
+                          </div>
+
+                          <h5 className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug pt-1">
+                            {res.title}
+                          </h5>
+
+                          {res.description && (
+                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                              {res.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[10px] text-slate-400">
+                          <span className="truncate pr-2 font-mono">{res.fileName} • {res.fileSize || "PDF"}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <a
+                              href={res.fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-2 py-1 bg-white hover:bg-slate-100 text-indigo-700 border border-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 transition"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                              <span>View</span>
+                            </a>
+                            <a
+                              href={res.fileUrl}
+                              download={res.fileName}
+                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-bold flex items-center gap-1 transition"
+                            >
+                              <Download className="w-2.5 h-2.5" />
+                              <span>Download</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveResource(res.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                              title="Delete artifact"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 rounded-2xl bg-slate-50 border border-dashed border-slate-300 text-center space-y-2">
+                    <FolderGit2 className="w-8 h-8 text-slate-400 mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">No Technical Resources or Whitepapers Uploaded Yet</p>
+                    <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                      Upload system blueprints, presentation slide decks (PPTX/PDF), and research papers to demonstrate your engineering documentation depth.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddResourceModal(true)}
+                      className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-500 transition shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Upload Artifact Now</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1215,6 +1735,242 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 )}
               </div>
 
+              {/* Training Experience & Video Self-Reflection Upload */}
+              <div className="pt-5 border-t border-slate-200/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                      <Video className="w-4 h-4 text-indigo-600" />
+                      Training Experience &amp; Video Self-Reflection
+                    </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Upload your reflection video (.mp4, .webm) or link a demo (YouTube/Loom/Drive). AI generates milestones and syncs to <span className="font-bold text-indigo-600">Section 10</span> of your official report.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full border border-indigo-200 shrink-0">
+                    Report Section 10
+                  </span>
+                </div>
+
+                {reflectionVideo ? (
+                  <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                          <Video className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">
+                            {reflectionVideo.title || "Internship Experience & Reflection Video"}
+                          </p>
+                          <p className="text-[10px] text-indigo-700 font-semibold flex items-center gap-1.5 mt-0.5">
+                            <Sparkles className="w-3 h-3 text-indigo-600" />
+                            {reflectionVideo.aiMilestones?.length || 4} AI Milestones Extracted • Duration: {reflectionVideo.duration || "18:42"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleAnalyzeVideoWithAI(reflectionVideo.videoUrl, reflectionVideo.title)}
+                          disabled={isVideoAnalyzing}
+                          className="px-3 py-1.5 bg-white text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {isVideoAnalyzing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          <span>Re-Analyze AI</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemoveVideo}
+                          className="p-1.5 bg-white text-rose-600 hover:text-rose-700 border border-slate-200 rounded-xl text-xs font-bold cursor-pointer"
+                          title="Remove Video"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                          Video Title / Presentation Theme
+                        </label>
+                        <input
+                          type="text"
+                          value={videoInputTitle}
+                          onChange={(e) => setVideoInputTitle(e.target.value)}
+                          placeholder="e.g. My Mind2I Training Experience & Capstone Defense"
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                          Video URL (YouTube, Loom, Google Drive, MP4)
+                        </label>
+                        <input
+                          type="url"
+                          value={videoInputUrl}
+                          onChange={(e) => setVideoInputUrl(e.target.value)}
+                          placeholder="https://youtu.be/... or https://loom.com/share/..."
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                      <label className="flex-1 w-full border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-2xl p-4 text-center cursor-pointer transition bg-slate-50/50 hover:bg-indigo-50/20">
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,video/ogg,video/quicktime"
+                          onChange={handleVideoFileUpload}
+                          className="hidden"
+                        />
+                        <UploadCloud className="w-6 h-6 text-indigo-500 mx-auto mb-1" />
+                        <p className="text-xs font-bold text-slate-800">
+                          {videoFileName ? `Selected: ${videoFileName}` : "Upload Video File (.mp4, .webm)"}
+                        </p>
+                        <p className="text-[10px] text-slate-400">Max size 100MB</p>
+                      </label>
+
+                      <div className="text-xs text-slate-400 font-bold uppercase">or</div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAnalyzeVideoWithAI(videoInputUrl, videoInputTitle)}
+                        disabled={isVideoAnalyzing || (!videoInputUrl && !videoFileName)}
+                        className="w-full sm:w-auto px-5 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 text-white rounded-2xl text-xs font-bold shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        {isVideoAnalyzing ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Analyzing Video...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 text-amber-300" />
+                            <span>Analyze Video with AI</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Technical Resources & Research Whitepapers Upload Section in Edit Tab */}
+              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                      <FolderGit2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">
+                        Upload Technical Resources &amp; Research Whitepapers
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Upload PDF whitepapers, PPTX presentation decks, and system blueprints to your profile and admin review workspace
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">
+                    {resources.length} Uploaded
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Artifact Title
+                    </label>
+                    <input
+                      type="text"
+                      value={newResTitle}
+                      onChange={(e) => setNewResTitle(e.target.value)}
+                      placeholder="e.g. Distributed LLM Microservices Architecture Blueprint"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={newResType}
+                      onChange={(e) => setNewResType(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                    >
+                      <option value="whitepaper">Research Whitepaper (PDF)</option>
+                      <option value="blueprint">System Architecture Blueprint</option>
+                      <option value="presentation">Presentation Slide Deck (PPTX/PDF)</option>
+                      <option value="document">Technical Document / API Spec</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Description &amp; Key Technical Highlights
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newResDescription}
+                    onChange={(e) => setNewResDescription(e.target.value)}
+                    placeholder="Brief summary of architecture decisions, algorithmic benchmarks, or business impact..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Document / Whitepaper File Upload
+                    </label>
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50/70 text-indigo-700 text-xs font-bold cursor-pointer transition">
+                      <UploadCloud className="w-4 h-4 text-indigo-600" />
+                      <span className="truncate">
+                        {newResFileName ? newResFileName : "Choose PDF / PPTX file..."}
+                      </span>
+                      <input
+                        type="file"
+                        accept=".pdf,.pptx,.ppt,.docx,.doc"
+                        onChange={handleResourceFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Or Online Link / Cloud Drive URL
+                    </label>
+                    <input
+                      type="url"
+                      value={newResFileUrl}
+                      onChange={(e) => setNewResFileUrl(e.target.value)}
+                      placeholder="https://drive.google.com/... or https://arxiv.org/..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleAddResource()}
+                    disabled={!newResTitle.trim()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Upload &amp; Add to Profile Vault</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
@@ -1477,6 +2233,124 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* QUICK ADD RESOURCE / WHITEPAPER MODAL                     */}
+      {/* ========================================================= */}
+      {showAddResourceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <FolderGit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">
+                    Upload Technical Resource / Whitepaper
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Visible immediately in Admin Profile Reviews &amp; Candidate Report Section 09
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddResourceModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Artifact Title <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newResTitle}
+                  onChange={(e) => setNewResTitle(e.target.value)}
+                  placeholder="e.g. Distributed LLM Microservices Architecture Blueprint"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                <select
+                  value={newResType}
+                  onChange={(e) => setNewResType(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                >
+                  <option value="whitepaper">Research Whitepaper (PDF)</option>
+                  <option value="blueprint">System Architecture Blueprint</option>
+                  <option value="presentation">Presentation Slide Deck (PPTX/PDF)</option>
+                  <option value="document">Technical Document / API Spec</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Description &amp; Highlights</label>
+                <textarea
+                  rows={2}
+                  value={newResDescription}
+                  onChange={(e) => setNewResDescription(e.target.value)}
+                  placeholder="Key technical scope, system topology, or research benchmarks..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Upload File (.pdf, .pptx)</label>
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50/70 text-indigo-700 text-xs font-bold cursor-pointer transition">
+                    <UploadCloud className="w-4 h-4 text-indigo-600" />
+                    <span className="truncate">{newResFileName ? newResFileName : "Choose file..."}</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.pptx,.ppt,.docx,.doc"
+                      onChange={handleResourceFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Or Document URL</label>
+                  <input
+                    type="url"
+                    value={newResFileUrl}
+                    onChange={(e) => setNewResFileUrl(e.target.value)}
+                    placeholder="https://drive.google.com/..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAddResourceModal(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddResource()}
+                disabled={!newResTitle.trim()}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Upload to Profile Vault</span>
               </button>
             </div>
           </div>

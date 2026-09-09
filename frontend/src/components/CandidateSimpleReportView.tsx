@@ -74,6 +74,18 @@ export const CandidateSimpleReportView: React.FC<CandidateSimpleReportViewProps>
       ? mentorName
       : "Vijaya Kumar Mekala";
 
+  // Dynamic evaluation memoization with fallback to localStorage
+  const evaluation = React.useMemo(() => {
+    if (student.evaluation && (student.evaluation.communicationScore || student.evaluation.aiVerdict)) {
+      return student.evaluation;
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
+      if (saved[student.id]) return saved[student.id];
+    } catch {}
+    return student.evaluation;
+  }, [student]);
+
   // 12 Module Scorecard Data (Synchronized with 12-domain composite calculations)
   const modulesScorecard = data?.twelveModuleScores && data.twelveModuleScores.length === 12
     ? data.twelveModuleScores.map((m: any) => {
@@ -363,7 +375,9 @@ export const CandidateSimpleReportView: React.FC<CandidateSimpleReportViewProps>
             : 93
         );
 
-        const grammarScore = resumeData?.scorecard?.grammarScore || 94;
+        const evalGrammar = student.evaluation?.grammarScore;
+        const evalProject = student.evaluation?.projectScore;
+        const grammarScore = evalGrammar ?? (resumeData?.scorecard?.grammarScore || 94);
         const formattingScore = resumeData?.scorecard?.formattingScore || 92;
         const docScore = 96;
         const commentsScore = 90;
@@ -434,7 +448,7 @@ export const CandidateSimpleReportView: React.FC<CandidateSimpleReportViewProps>
         ];
 
         const overallAvg = Math.round(
-          (attendanceRate + perfScore + 96 + skillsScore + commScore + presScore + grammarOverall + 97 + behavioralScore + 95) / 10
+          (attendanceRate + perfScore + (evalProject ?? 96) + skillsScore + commScore + presScore + grammarOverall + 97 + behavioralScore + 95) / 10
         );
 
         return (
@@ -519,7 +533,7 @@ export const CandidateSimpleReportView: React.FC<CandidateSimpleReportViewProps>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase tracking-wider text-blue-700 print:text-slate-950">Project Execution</span>
-                    <span className="text-xs font-black text-blue-900 print:text-slate-900">96%</span>
+                    <span className="text-xs font-black text-blue-900 print:text-slate-900">{evalProject ?? 96}%</span>
                   </div>
                   <div className="text-[11px] font-bold text-slate-900 truncate print:text-[9px]">Tech Architecture</div>
                   <div className="text-[9px] text-slate-800 font-bold truncate print:text-[8px] print:text-slate-950">4/4 Shipped · 98% Tests</div>
@@ -756,7 +770,7 @@ export const CandidateSimpleReportView: React.FC<CandidateSimpleReportViewProps>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xl sm:text-2xl font-black tracking-tight text-blue-700 print:text-base">
-                      96%
+                      {evalProject ?? 96}%
                     </span>
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase border bg-blue-100 text-blue-800 border-blue-300 print:text-[8px]">
                       Verified
@@ -1414,11 +1428,13 @@ export const CandidateSimpleReportView: React.FC<CandidateSimpleReportViewProps>
             <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-300 print:text-emerald-700 block">
               FINAL VERDICT
             </span>
-            <div className="text-lg sm:text-xl font-black text-white print:text-slate-900 mt-0.5 print:text-sm">
-              STRONG HIRE
+            <div className="text-lg sm:text-xl font-black text-white print:text-slate-900 mt-0.5 print:text-sm uppercase">
+              {student.evaluation?.aiVerdict ? student.evaluation.aiVerdict.split("·")[0].trim() : "STRONG HIRE"}
             </div>
-            <span className="text-[10px] text-emerald-400 print:text-emerald-700 font-bold block">
-              Distinction A+
+            <span className="text-[10px] text-emerald-400 print:text-emerald-700 font-bold block truncate max-w-[180px]">
+              {student.evaluation?.aiVerdict && student.evaluation.aiVerdict.includes("·")
+                ? student.evaluation.aiVerdict.split("·")[1].trim()
+                : "Distinction A+"}
             </span>
           </div>
         </div>
@@ -1539,9 +1555,95 @@ export const CandidateSimpleReportView: React.FC<CandidateSimpleReportViewProps>
               Placement Verdict
             </span>
             <p className="leading-snug">
-              • <strong>Strong Hire</strong> (Distinction A+ Top 3.2%)<br />
-              • Recommended for <strong>Level L4 AI Engineer</strong> roles
+              • <strong>{evaluation?.aiVerdict || "Strong Hire (Distinction A+ Top 3.2%)"}</strong><br />
+              • {evaluation?.customNotes ? (evaluation.customNotes.length > 70 ? evaluation.customNotes.slice(0, 68) + "..." : evaluation.customNotes) : "Recommended for Level L4 AI Engineer roles"}
             </p>
+          </div>
+        </div>
+
+        {/* ─── Dedicated Intern Profile Review & Program Faculty Evaluation Card ─── */}
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white/5 border border-white/10 print:bg-white print:border-slate-200 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-white/10 print:border-slate-200">
+            <div className="flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-400 print:text-amber-600" />
+              <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white print:text-slate-900">
+                Intern Profile Review &amp; Faculty Evaluation
+              </h4>
+              <span className="text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-full print:bg-indigo-50 print:text-indigo-700">
+                AI Verified
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-400 print:text-slate-600">Evaluator:</span>
+              <strong className="text-white print:text-slate-900 font-bold">{evaluation?.reviewerName || effectiveMentor}</strong>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold text-[10px] print:bg-emerald-100 print:text-emerald-800">
+                {evaluation?.aiVerdict || "Strong Hire (Ready for Placement)"}
+              </span>
+            </div>
+          </div>
+
+          {/* 4 Rubric Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="p-2.5 rounded-xl bg-white/5 print:bg-slate-50 border border-white/5 print:border-slate-200 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 print:text-slate-600 uppercase">Communication</span>
+                <span className="text-xs font-black text-cyan-400 print:text-cyan-700">{evaluation?.communicationScore || 92}%</span>
+              </div>
+              <p className="text-[10px] text-slate-300 print:text-slate-700 line-clamp-2 leading-relaxed">
+                {evaluation?.communicationNotes || "Articulate technical verbal explanations with confident delivery."}
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/5 print:bg-slate-50 border border-white/5 print:border-slate-200 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 print:text-slate-600 uppercase">Grammar &amp; Docs</span>
+                <span className="text-xs font-black text-emerald-400 print:text-emerald-700">{evaluation?.grammarScore || 95}%</span>
+              </div>
+              <p className="text-[10px] text-slate-300 print:text-slate-700 line-clamp-2 leading-relaxed">
+                {evaluation?.grammarNotes || "Precise technical phrasing, accurate domain vocabulary, and clean docs."}
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/5 print:bg-slate-50 border border-white/5 print:border-slate-200 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 print:text-slate-600 uppercase">Verbal Fluency</span>
+                <span className="text-xs font-black text-fuchsia-400 print:text-fuchsia-700">{evaluation?.fluencyScore || 91}%</span>
+              </div>
+              <p className="text-[10px] text-slate-300 print:text-slate-700 line-clamp-2 leading-relaxed">
+                {evaluation?.fluencyNotes || "Natural speech pacing and composure during technical design defenses."}
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/5 print:bg-slate-50 border border-white/5 print:border-slate-200 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 print:text-slate-600 uppercase">Project Execution</span>
+                <span className="text-xs font-black text-blue-400 print:text-blue-700">{evaluation?.projectScore || 96}%</span>
+              </div>
+              <p className="text-[10px] text-slate-300 print:text-slate-700 line-clamp-2 leading-relaxed">
+                {evaluation?.projectNotes || "Robust test suite compliance, modular codebases, and clean containerization."}
+              </p>
+            </div>
+          </div>
+
+          {/* Mentor Remarks & AI Summary */}
+          <div className="pt-2 border-t border-white/5 print:border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="p-2.5 rounded-xl bg-white/5 print:bg-slate-50 border border-white/5 print:border-slate-200 space-y-1">
+              <span className="text-[10px] font-bold text-amber-400 print:text-amber-700 uppercase tracking-wider block">
+                Mentor Custom Remarks
+              </span>
+              <p className="text-[11px] text-slate-200 print:text-slate-800 leading-relaxed italic">
+                "{evaluation?.customNotes || "Exhibits exceptional problem decomposition skills, consistent work ethic, and production diligence."}"
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/5 print:bg-slate-50 border border-white/5 print:border-slate-200 space-y-1">
+              <span className="text-[10px] font-bold text-indigo-300 print:text-indigo-700 uppercase tracking-wider block">
+                AI Executive Summary Narrative
+              </span>
+              <p className="text-[11px] text-slate-200 print:text-slate-800 leading-relaxed italic">
+                "{evaluation?.aiSummary || "Candidate demonstrates strong readiness for full-stack engineering roles with high analytical aptitude."}"
+              </p>
+            </div>
           </div>
         </div>
 

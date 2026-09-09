@@ -23,6 +23,8 @@ import {
   ShieldCheck,
   Calendar,
   Lock,
+  Video,
+  Play,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import confetti from "canvas-confetti";
@@ -79,10 +81,43 @@ export const ProjectSubmissionModal: React.FC<ProjectSubmissionModalProps> = ({
       : null
   );
 
+  const [demoVideoUrl, setDemoVideoUrl] = useState(
+    existingSubmission?.demoVideoUrl || ""
+  );
+  const [demoVideoFile, setDemoVideoFile] = useState<{
+    name: string;
+    size: string;
+  } | null>(
+    existingSubmission?.demoVideoName
+      ? {
+          name: existingSubmission.demoVideoName,
+          size: "Demo Video",
+        }
+      : null
+  );
+
   const [isDragging, setIsDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isApproved) return;
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      setDemoVideoFile({
+        name: file.name,
+        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      });
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setDemoVideoUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -127,6 +162,8 @@ export const ProjectSubmissionModal: React.FC<ProjectSubmissionModalProps> = ({
       liveDemoUrl: liveDemoUrl.trim(),
       fileName: uploadedFile?.name,
       fileSize: uploadedFile?.size,
+      demoVideoUrl: demoVideoUrl.trim() || undefined,
+      demoVideoName: demoVideoFile?.name || (demoVideoUrl.trim() ? "Project_Demo_Recording" : undefined),
       submissionNotes: submissionNotes.trim(),
       status: existingSubmission?.status || "pending",
       gradePoints: existingSubmission?.gradePoints,
@@ -522,6 +559,83 @@ export const ProjectSubmissionModal: React.FC<ProjectSubmissionModalProps> = ({
                           <p className="text-[11px] text-slate-400 mt-1">
                             Accepted formats: ZIP, PDF, tar.gz (Up to 50MB)
                           </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* CARD 1B: OPTIONAL PROJECT DEMO / PRESENTATION VIDEO */}
+                  <div className="p-6 sm:p-7 rounded-3xl bg-white border border-slate-200 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900">
+                        <Video className="w-4 h-4 text-purple-600" />
+                        <span>Upload Project Demo Video (Optional)</span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                        Optional · Syncs to Report
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                        Attach a walkthrough or demo recording (.mp4, .webm up to 50MB) or paste a video link. This demo video will be featured individually in your official <strong>Project Presentation &amp; Resources Hub</strong> report.
+                      </p>
+
+                      {demoVideoFile || demoVideoUrl ? (
+                        <div className="flex items-center justify-between p-3.5 bg-purple-50/60 rounded-2xl border border-purple-200 shadow-2xs">
+                          <div className="flex items-center gap-3 truncate">
+                            <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                              <Video className="w-5 h-5" />
+                            </div>
+                            <div className="text-left truncate">
+                              <div className="text-xs font-bold text-slate-900 truncate">
+                                {demoVideoFile?.name || "Demo Video Linked"}
+                              </div>
+                              <div className="text-[10px] text-purple-600 font-medium">
+                                {demoVideoFile?.size || "Attached"} • Ready for Presentation Hub
+                              </div>
+                            </div>
+                          </div>
+                          {!isApproved && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDemoVideoFile(null);
+                                setDemoVideoUrl("");
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title="Remove video"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label className="p-4 rounded-2xl border-2 border-dashed border-purple-200 hover:border-purple-400 hover:bg-purple-50/40 text-center cursor-pointer transition flex flex-col items-center justify-center gap-1.5">
+                            <Video className="w-6 h-6 text-purple-500" />
+                            <span className="text-xs font-bold text-purple-700">Upload Video File</span>
+                            <span className="text-[10px] text-slate-400">MP4, WebM (Max 50MB)</span>
+                            <input
+                              type="file"
+                              accept="video/mp4,video/webm,video/quicktime"
+                              onChange={handleVideoSelect}
+                              className="hidden"
+                              disabled={isApproved}
+                            />
+                          </label>
+
+                          <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col justify-center space-y-2">
+                            <label className="text-[11px] font-bold text-slate-600 block">Or Paste Video URL</label>
+                            <input
+                              type="url"
+                              value={demoVideoUrl}
+                              onChange={(e) => setDemoVideoUrl(e.target.value)}
+                              placeholder="https://loom.com/share/... or YouTube"
+                              disabled={isApproved}
+                              className="w-full px-3 py-2 rounded-xl text-xs bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                          </div>
                         </div>
                       )}
                     </div>

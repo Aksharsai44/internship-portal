@@ -42,6 +42,7 @@ import {
   GripHorizontal,
 } from "lucide-react";
 import { LiveSessionBanner } from "./LiveSessionBanner";
+import { AdminUniversalAIAnalyzerModal } from "./AdminUniversalAIAnalyzerModal";
 
 interface AdminDashboardViewProps {
   batches: Batch[];
@@ -67,6 +68,7 @@ interface AdminDashboardViewProps {
     timerSeconds?: number;
   }) => void;
   onViewStudent?: (student: Student) => void;
+  onUpdateStudents?: (students: Student[]) => void;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -85,7 +87,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onNavigateTab,
   onCreateInstantPoll,
   onViewStudent,
+  onUpdateStudents,
 }) => {
+  const [showUniversalAIModal, setShowUniversalAIModal] = useState(false);
+
   // Widget filter / drill-down modal state
   const [drilldownMetric, setDrilldownMetric] = useState<
     "all" | "attempting" | "not_attending" | "top_performers" | null
@@ -254,6 +259,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
         {/* Right: Dropdown Menu to Select Batch */}
         <div className="flex items-center gap-2.5 relative flex-shrink-0" ref={batchDropdownRef}>
+          {/* AI Full Analyzer Header Button */}
+          <button
+            type="button"
+            onClick={() => setShowUniversalAIModal(true)}
+            className="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs shadow-md shadow-indigo-500/20 transition flex items-center gap-2 cursor-pointer flex-shrink-0"
+            title="Launch Universal AI Full-System Cohort Analyzer"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+            <span>AI Full Analyzer</span>
+          </button>
+
           {/* Dropdown Trigger Button */}
           <button
             type="button"
@@ -1615,6 +1631,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Universal AI Full-System Cohort Analyzer Modal */}
+      <AdminUniversalAIAnalyzerModal
+        isOpen={showUniversalAIModal}
+        onClose={() => setShowUniversalAIModal(false)}
+        students={students}
+        onApplyUniversalCalibration={(updated) => {
+          if (onUpdateStudents) {
+            onUpdateStudents(updated);
+          }
+        }}
+      />
     </div>
   );
 };

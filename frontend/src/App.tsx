@@ -23,6 +23,8 @@ import {
   LeaveRequest,
   InternResumeData,
   AppNotification,
+  InternEvaluation,
+  InternResource,
 } from "./types";
 import {
   INITIAL_PROJECT_ASSIGNMENTS,
@@ -79,12 +81,14 @@ import { ShiftManagementView } from "./components/ShiftManagementView";
 import { InternAttendanceView } from "./components/InternAttendanceView";
 import { DailyActivityLogView } from "./components/DailyActivityLogView";
 import { AdminDailyLogsReviewView } from "./components/AdminDailyLogsReviewView";
+import { AdminProfileEvaluationsView } from "./components/AdminProfileEvaluationsView";
 import { AIResumeBuilderView } from "./components/AIResumeBuilderView";
 import { NotificationDropdown } from "./components/NotificationDropdown";
 import { Minda2Logo } from "./components/Minda2Logo";
 import {
   LayoutDashboard,
   Users,
+  UserCheck,
   BookOpen,
   Code2,
   Radio,
@@ -111,9 +115,12 @@ import {
   CheckCircle2,
   Sparkles,
   Bell,
+  FolderGit2,
+  Check,
 } from "lucide-react";
 import { ResourcesView } from "./components/ResourcesView";
 import { ProfileView } from "./components/ProfileView";
+import { InternResourcesVaultView, DEFAULT_SAMPLE_RESOURCES } from "./components/InternResourcesVaultView";
 import { motion, AnimatePresence } from "motion/react";
 
 export default function App() {
@@ -121,7 +128,21 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>("admin");
   const [batches, setBatches] = useState<Batch[]>(initialBatches);
   const [selectedBatch, setSelectedBatch] = useState<Batch>(emptyBatch);
-  const [students, setStudents] = useState<Student[]>(initialStudents);
+  const [students, setStudents] = useState<Student[]>(() => {
+    try {
+      const savedEvals = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
+      const savedResources = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+      const savedVideos = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+      return initialStudents.map((s) => ({
+        ...s,
+        evaluation: savedEvals[s.id] || s.evaluation,
+        resources: savedResources[s.id] || s.resources || DEFAULT_SAMPLE_RESOURCES(s.id, s.batchId),
+        reflectionVideo: savedVideos[s.id] || s.reflectionVideo,
+      }));
+    } catch {
+      return initialStudents;
+    }
+  });
   const [currentStudent, setCurrentStudent] = useState<Student>(emptyStudent);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [learnHubModules, setLearnHubModules] = useState<LearnHubModule[]>(initialLearnHubModules);
@@ -640,9 +661,21 @@ export default function App() {
     axios.get('/api/students/')
       .then(res => {
         if (Array.isArray(res.data)) {
+          let savedEvals: Record<string, InternEvaluation> = {};
+          let savedResources: Record<string, any[]> = {};
+          let savedVideos: Record<string, any> = {};
+          try {
+            savedEvals = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
+            savedResources = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+            savedVideos = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+          } catch {}
+
           const apiStudents = res.data.map((s: any) => ({
             ...s,
             batchId: s.batch || s.batchId,
+            evaluation: savedEvals[s.id] || s.evaluation,
+            resources: savedResources[s.id] || s.resources || DEFAULT_SAMPLE_RESOURCES(s.id, s.batch || s.batchId),
+            reflectionVideo: savedVideos[s.id] || s.reflectionVideo,
             scores: s.scores || {
               quizScore: 0,
               codingScore: 0,
@@ -936,6 +969,38 @@ export default function App() {
     const payload = { ...updatedStudent, batch: updatedStudent.batchId };
     axios.put(`/api/students/${updatedStudent.id}/`, payload)
       .catch(err => console.error("Failed to update student:", err));
+  };
+
+  const handleUpdateStudentEvaluation = (studentId: string, evaluation: InternEvaluation) => {
+    setStudents((prev) => {
+      const updated = prev.map((s) => (s.id === studentId ? { ...s, evaluation } : s));
+      try {
+        const stored: Record<string, InternEvaluation> = JSON.parse(
+          localStorage.getItem("m2i_intern_evaluations") || "{}"
+        );
+        stored[studentId] = evaluation;
+        localStorage.setItem("m2i_intern_evaluations", JSON.stringify(stored));
+      } catch (err) {
+        console.error("Failed to save evaluation to localStorage", err);
+      }
+      return updated;
+    });
+
+    setInspectedStudent((prev) => (prev && prev.id === studentId ? { ...prev, evaluation } : prev));
+    setCurrentStudent((prev) => (prev && prev.id === studentId ? { ...prev, evaluation } : prev));
+  };
+
+  const handleUpdateStudentResources = (studentId: string, resources: InternResource[]) => {
+    setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, resources } : s)));
+    setInspectedStudent((prev) => (prev && prev.id === studentId ? { ...prev, resources } : prev));
+    setCurrentStudent((prev) => (prev && prev.id === studentId ? { ...prev, resources } : prev));
+    try {
+      const stored = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
+      stored[studentId] = resources;
+      localStorage.setItem("m2i_intern_resources", JSON.stringify(stored));
+    } catch (err) {
+      console.error("Failed to save resources to localStorage", err);
+    }
   };
 
   const handleDeleteStudent = (studentId: string) => {
@@ -1249,6 +1314,7 @@ export default function App() {
   const adminNavItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "batch", label: "Cohorts", icon: Users },
+    { id: "profile_evaluations", label: "Profile Reviews & AI", icon: UserCheck, badgeText: "AI", badgeType: "violet" },
     { id: "shifts", label: "Shifts & Attendance", icon: Clock },
     { id: "daily_logs", label: "Daily Logs & AI Reviews", icon: Sparkles },
     { id: "learn_hub", label: "Learn Hub", icon: BookOpen },
@@ -1278,6 +1344,13 @@ export default function App() {
     ...(settings.enableLiveQA !== false ? [{ id: "live_qa", label: "Live Q&A", icon: Radio }] : []),
     ...(settings.enableCodingIDE !== false ? [{ id: "assignments", label: "Assignments", icon: Code2 }] : []),
     { id: "projects", label: "Assigned Projects", icon: FolderKanban },
+    {
+      id: "my_resources",
+      label: "My Resources",
+      icon: FolderGit2,
+      badgeText: "AI",
+      badgeType: "violet",
+    },
     { id: "resources", label: "Resources", icon: Library },
     ...(settings.enableMyReport !== false ? [{ id: "reports", label: "My Report", icon: BarChart3 }] : []),
     {
@@ -1512,15 +1585,16 @@ export default function App() {
                 className="absolute right-0 top-12 mt-2 w-56 bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden z-50"
               >
                 <div className="p-4 border-b border-slate-50 bg-slate-50/50">
-                  <div className="text-sm font-black text-slate-800 truncate">{loggedInUser?.name || loggedInUser?.contactPerson || "User"}</div>
+                  <div className="text-sm font-black text-slate-800 truncate">{loggedInUser?.name || loggedInUser?.contactPerson || "Vijaya Kumar Mekala"}</div>
                   <div className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${
                     userRole === "admin" ? "text-indigo-500" : userRole === "client" ? "text-teal-500" : "text-cyan-500"
-                  }`}>{userRole === "client" ? loggedInUser?.companyName || "Client" : userRole}</div>
+                  }`}>{userRole === "client" ? loggedInUser?.companyName || "Client" : (loggedInUser?.role || userRole)}</div>
                 </div>
+
                 <div className="p-2">
                   <button
                     onClick={() => { setProfileMenuOpen(false); handleLogout(); }}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all duration-200 text-left"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all duration-200 text-left cursor-pointer"
                   >
                     <LogOut className="w-4 h-4" /> Sign Out
                   </button>
@@ -1685,6 +1759,7 @@ export default function App() {
                 onNavigateTab={setActiveTab}
                 onCreateInstantPoll={handleCreateInstantPoll}
                 onViewStudent={(s) => setInspectedStudent(s)}
+                onUpdateStudents={setStudents}
               />
             )}
 
@@ -1699,6 +1774,28 @@ export default function App() {
                   const b = batches.find((x) => x.id === batchId) || selectedBatch;
                   setSelfRegisterBatch(b);
                 }}
+              />
+            )}
+
+            {activeTab === "profile_evaluations" && userRole === "admin" && (
+              <AdminProfileEvaluationsView
+                batches={batches}
+                selectedBatch={selectedBatch}
+                students={students}
+                dailyActivityLogs={dailyActivityLogs}
+                projectSubmissions={projectSubmissions}
+                onUpdateStudentEvaluation={handleUpdateStudentEvaluation}
+                onUpdateStudentResources={handleUpdateStudentResources}
+                onViewStudentReport={(s) => setInspectedStudent(s)}
+                onToast={showToastNotification}
+                currentAdminUser={
+                  loggedInUser || {
+                    name: "Vijaya Kumar Mekala",
+                    role: "Lead Evaluator & Program Director",
+                    email: "vijayakumar@mind2i.edu",
+                    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=VijayaKumar",
+                  }
+                }
               />
             )}
 
@@ -1915,6 +2012,13 @@ export default function App() {
                 clients={clients}
                 batches={batches}
                 onUpdateRequests={setInterviewRequests}
+              />
+            )}
+
+            {activeTab === "my_resources" && userRole === "student" && currentStudent && (
+              <InternResourcesVaultView
+                currentStudent={currentStudent}
+                onUpdateStudent={handleUpdateStudentProfile}
               />
             )}
 

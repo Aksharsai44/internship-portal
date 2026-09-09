@@ -58,6 +58,70 @@ export interface Student {
   mentor?: string;
   internshipStartDate?: string;
   internshipEndDate?: string;
+  evaluation?: InternEvaluation;
+  evaluations?: InternEvaluation[];
+  reflectionVideo?: InternReflectionVideo;
+  resources?: InternResource[];
+}
+
+export interface InternReflectionVideo {
+  videoUrl: string;
+  title: string;
+  duration?: string;
+  uploadedAt: string;
+  aiMilestones?: { time: string; desc: string }[];
+  aiSummary?: string;
+  aiCommunicationScore?: number;
+  aiFluencyScore?: number;
+  aiToneNotes?: string;
+}
+
+export interface InternResource {
+  id: string;
+  studentId: string;
+  batchId?: string;
+  title: string;
+  type: "presentation" | "document" | "research" | "blueprint" | "whitepaper";
+  fileUrl: string;
+  fileName: string;
+  fileSize?: string;
+  uploadedAt: string;
+  description?: string;
+  aiRating?: number; // 0-100%
+  aiAuditSummary?: string;
+  aiRigorNotes?: string;
+  tags?: string[];
+}
+
+export interface InternEvaluation {
+  id: string;
+  studentId: string;
+  batchId: string;
+  reviewerName: string;
+  reviewerRole?: string;
+  evaluationName?: string;
+  roundName?: string;
+  roundNumber?: number;
+  evaluatorAvatar?: string;
+  evaluatedAt: string;
+  // 4 Core Dimensions
+  communicationScore: number; // 0-100%
+  communicationNotes: string;
+  grammarScore: number; // 0-100%
+  grammarNotes: string;
+  fluencyScore: number; // 0-100%
+  fluencyNotes: string;
+  projectScore: number; // 0-100%
+  projectNotes: string;
+  // Custom Notes / Freeform Remarks
+  customNotes: string;
+  // AI Synthesis Output
+  aiVerdict?: string;
+  aiSummary?: string;
+  aiStrengths?: string[];
+  aiGrowthAreas?: string[];
+  overallRating?: number;
+  isAIGenerated?: boolean;
 }
 
 export interface ClientUser {
@@ -292,6 +356,8 @@ export interface ProjectSubmission {
   liveDemoUrl: string;
   fileName?: string;
   fileSize?: string;
+  demoVideoUrl?: string;
+  demoVideoName?: string;
   submissionNotes: string; // Intern's observation writeup & architecture remarks
   status: "pending" | "passed" | "needs_revision";
   gradePoints?: number;
