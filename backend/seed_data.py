@@ -1,12 +1,17 @@
 import os
 import django
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 
-from api.models import Batch, Student, Score, ClientUser, InterviewRequest, Assignment, ScheduledMeeting
+from api.models import (
+    Batch, Student, Score, ClientUser, InterviewRequest, Assignment, ScheduledMeeting,
+    InternEvaluationRound, BatchEvaluationRound, ProjectAssignment, ProjectSubmission,
+    ShiftPattern, InternRosterAssignment, AttendanceRecord, PunchLogEntry,
+    LeaveRequest, HolidayEvent, DailyActivityLog, AppNotification, InternResource
+)
 
 print("Seeding rich mock internship data...")
 
@@ -418,18 +423,457 @@ InterviewRequest.objects.create(
 )
 
 # Completed interview
-InterviewRequest.objects.create(
+InterviewRequest.objects.get_or_create(
     id=f"intv_completed_4",
-    client=client,
-    intern=nikhil,
-    batch=batch3,
-    status="completed",
-    requestedDate=date.today() - timedelta(days=10),
-    scheduledDate=date.today() - timedelta(days=4),
-    interviewType="virtual",
-    notes="Evaluating for Cloud DevOps deployment pipeline team.",
-    adminNotes="Interview conducted successfully. Offer in progress."
+    defaults={
+        "client": client,
+        "intern": nikhil,
+        "batch": batch3,
+        "status": "completed",
+        "requestedDate": date.today() - timedelta(days=10),
+        "scheduledDate": date.today() - timedelta(days=4),
+        "interviewType": "virtual",
+        "notes": "Evaluating for Cloud DevOps deployment pipeline team.",
+        "adminNotes": "Interview conducted successfully. Offer in progress."
+    }
 )
 
-print("Created 4 sample interview requests.")
-print("Seed finished successfully!")
+# 6. Seed Shift Patterns
+shifts_data = [
+    {"id": "shift_morning", "name": "Morning Engineering Sprint", "code": "MS-01", "startTime": "08:00 AM", "endTime": "04:30 PM", "color": "emerald", "description": "Core development sprint shift with standup at 08:30 AM.", "requiredHours": 8.0, "isDefault": False},
+    {"id": "shift_general", "name": "General Innovation Shift", "code": "GS-01", "startTime": "09:30 AM", "endTime": "06:30 PM", "color": "indigo", "description": "Standard working shift for all intern cohorts with midday mentor review.", "requiredHours": 8.0, "isDefault": True},
+    {"id": "shift_deep_work", "name": "Deep Work & Architecture", "code": "DW-01", "startTime": "11:00 AM", "endTime": "08:00 PM", "color": "violet", "description": "Focused coding and systems defense round preparations.", "requiredHours": 8.0, "isDefault": False},
+    {"id": "shift_night", "name": "Night Global Collaboration", "code": "NS-01", "startTime": "05:00 PM", "endTime": "01:30 AM", "color": "amber", "description": "Sync with global mentor teams and open-source releases.", "requiredHours": 8.0, "isDefault": False},
+]
+for s in shifts_data:
+    ShiftPattern.objects.update_or_create(id=s["id"], defaults=s)
+
+print("Seeded Shift Patterns.")
+
+# 7. Seed Holidays
+holidays = [
+    {"id": "hol_1", "name": "Republic Day", "date": "2026-01-26", "type": "holiday"},
+    {"id": "hol_2", "name": "Holi Festival", "date": "2026-03-14", "type": "holiday"},
+    {"id": "hol_3", "name": "May Day", "date": "2026-05-01", "type": "holiday"},
+    {"id": "hol_4", "name": "Independence Day", "date": "2026-08-15", "type": "holiday"},
+    {"id": "hol_5", "name": "Gandhi Jayanti", "date": "2026-10-02", "type": "holiday"},
+    {"id": "hol_6", "name": "Diwali Festival", "date": "2026-11-08", "type": "holiday"},
+]
+for h in holidays:
+    HolidayEvent.objects.update_or_create(id=h["id"], defaults=h)
+
+# Ensure Varshini Reddy is seeded
+varshini = Student.objects.filter(email="varshini.reddy@mind2i.edu").first()
+if not varshini:
+    varshini, _ = Student.objects.get_or_create(
+        id="intern_00_varshini",
+        defaults={
+            "name": "Varshini Reddy",
+            "email": "varshini.reddy@mind2i.edu",
+            "mobile": "+91 98765 99999",
+            "batch": batch1,
+            "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+            "college": "BVRIT Hyderabad",
+            "branch": "Computer Science & Engineering",
+            "city": "Hyderabad",
+            "state": "Telangana",
+            "skills": ["Python", "FastAPI", "React", "PostgreSQL", "Docker", "Redis"],
+            "bio": "Lead intern in systems architecture defense. Built distributed microservices and caching.",
+            "mentor": batch1.mentor,
+            "totalPoints": 3950,
+            "activeStreakDays": 45,
+            "fastestResponseMs": 780
+        }
+    )
+    Score.objects.update_or_create(
+        student=varshini,
+        defaults={
+            "quizScore": 98.0,
+            "codingScore": 99.0,
+            "liveQAScore": 95.0,
+            "assignmentScore": 98.0,
+            "overallAccuracy": 97.5
+        }
+    )
+
+# 8. Seed Roster, Attendance, and Punch Logs
+for idx, stu in enumerate([varshini, aarav, pooja, rohan, nikhil]):
+    # Roster
+    shift = shifts_data[idx % len(shifts_data)]
+    InternRosterAssignment.objects.update_or_create(
+        id=f"roster_{stu.id}",
+        defaults={
+            "internId": stu.id,
+            "internName": stu.name,
+            "batchId": stu.batch.id,
+            "batchName": stu.batch.name,
+            "shiftId": shift["id"],
+            "shiftName": shift["name"],
+            "role": "Intern",
+            "department": "Engineering",
+            "requiredHours": 8.0,
+            "customWeekends": [0, 6],
+        }
+    )
+
+    # Attendance Records (Past 5 days)
+    for day_offset in range(5):
+        rec_date = (date.today() - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+        status = "present" if (idx + day_offset) % 4 != 0 else "late"
+        AttendanceRecord.objects.update_or_create(
+            id=f"att_{stu.id}_{rec_date}",
+            defaults={
+                "internId": stu.id,
+                "internName": stu.name,
+                "date": rec_date,
+                "status": status,
+                "clockInTime": "09:28 AM" if status == "present" else "09:54 AM",
+                "clockOutTime": "06:32 PM",
+                "hoursWorked": 8.5 if status == "present" else 7.8,
+                "requiredHours": 8.0,
+                "shiftId": shift["id"],
+                "shiftName": shift["name"],
+                "isLate": (status == "late"),
+                "notes": "Good progress on assigned modules."
+            }
+        )
+
+    # Today's Punch Logs
+    today_str = date.today().strftime("%Y-%m-%d")
+    PunchLogEntry.objects.update_or_create(
+        id=f"punch_{stu.id}_in",
+        defaults={
+            "internId": stu.id,
+            "internName": stu.name,
+            "date": today_str,
+            "type": "clock_in",
+            "timestamp": f"{today_str}T09:30:15Z",
+            "formattedTime": f"09:30:15 AM - {today_str}",
+            "totalWorkedFormatted": "In Progress",
+            "totalWorkedSeconds": 14400,
+            "isPunchError": False
+        }
+    )
+
+print("Seeded Roster, Attendance & Punch Logs.")
+
+# 9. Seed Daily Activity Logs
+daily_logs = [
+    {
+        "id": "log_varshini_1",
+        "internId": varshini.id,
+        "internName": varshini.name,
+        "batchId": varshini.batch.id,
+        "batchName": varshini.batch.name,
+        "logType": "Daily Achievement",
+        "description": "Implemented JWT authentication and role-based permissions in FastAPI backend. Conducted load testing on redis caching layer.",
+        "date": date.today().strftime("%Y-%m-%d"),
+        "createdAt": datetime.now().isoformat(),
+        "hasBlockers": False,
+        "blockerDescription": "",
+        "status": "reviewed",
+        "adminFeedback": "Excellent async implementation. Proper rate limiting headers added.",
+        "adminRating": 5.0,
+        "adminReviewedAt": "Today, 02:30 PM",
+        "adminReviewerName": "Vijaya Kumar Mekala",
+        "aiReview": {
+            "rating": 4.9,
+            "summary": "Outstanding technical velocity on auth tokens and microservices defense.",
+            "velocityAssessment": "Outstanding",
+            "technicalHighlights": ["JWT Blacklisting", "Async Session Pooling", "Docker Containerization"],
+            "actionableSuggestions": ["Add refresh token rotation test cases"],
+            "reviewedAt": datetime.now().isoformat()
+        }
+    },
+    {
+        "id": "log_aarav_1",
+        "internId": aarav.id,
+        "internName": aarav.name,
+        "batchId": aarav.batch.id,
+        "batchName": aarav.batch.name,
+        "logType": "Daily Achievement",
+        "description": "Configured Prometheus telemetry monitoring and Grafana dashboards for Kubernetes cluster node health.",
+        "date": date.today().strftime("%Y-%m-%d"),
+        "createdAt": datetime.now().isoformat(),
+        "hasBlockers": True,
+        "blockerDescription": "Encountered RBAC permissions error on ingress controller namespace.",
+        "status": "pending",
+        "adminFeedback": "",
+        "aiReview": {
+            "rating": 4.5,
+            "summary": "Solid infrastructure monitoring setup. Blocker can be resolved by updating ClusterRoleBinding.",
+            "velocityAssessment": "On Track",
+            "technicalHighlights": ["Prometheus Metrics Exporter", "Helm Chart Template"],
+            "actionableSuggestions": ["Review cluster admin role bindings"],
+            "reviewedAt": datetime.now().isoformat()
+        }
+    },
+    {
+        "id": "log_pooja_1",
+        "internId": pooja.id,
+        "internName": pooja.name,
+        "batchId": pooja.batch.id,
+        "batchName": pooja.batch.name,
+        "logType": "Daily Achievement",
+        "description": "Refactored React design system tokens for high-contrast accessibility compliance. Verified Lighthouse score at 99.2%.",
+        "date": date.today().strftime("%Y-%m-%d"),
+        "createdAt": datetime.now().isoformat(),
+        "hasBlockers": False,
+        "status": "reviewed",
+        "adminFeedback": "Design polish is world-class. Approved for production merge.",
+        "adminRating": 5.0,
+        "adminReviewedAt": "Yesterday, 05:00 PM",
+        "adminReviewerName": "Dr. S. Rajesh"
+    }
+]
+for dl in daily_logs:
+    DailyActivityLog.objects.update_or_create(id=dl["id"], defaults=dl)
+
+print("Seeded Daily Activity Logs.")
+
+# 10. Seed Project Assignments & Submissions
+projects = [
+    {
+        "id": "proj_01",
+        "batch": batch1,
+        "title": "Interactive Data Visualization & Analytics Engine",
+        "description": "Create an accessible, responsive dashboard view featuring real-time data streaming simulation, filter controls, and CSS charts.",
+        "category": "Frontend (React, Tailwind, State)",
+        "tier": "intermediate",
+        "status": "in_progress",
+        "assignedStudentIds": [varshini.id, pooja.id],
+        "technologies": ["React 19", "TailwindCSS", "Recharts", "TypeScript"],
+        "deliverables": ["Interactive Chart Component", "Data Export Engine", "Lighthouse 95+ Audit"],
+        "startDate": (date.today() - timedelta(days=5)).strftime("%Y-%m-%d"),
+        "startTime": "09:00",
+        "deadline": (date.today() + timedelta(days=7)).strftime("%Y-%m-%d"),
+        "deadlineTime": "23:59",
+        "githubRepo": "https://github.com/mind2i-interns/data-viz-engine",
+        "figmaUrl": "https://figma.com/@mind2i/data-viz",
+        "points": 100
+    },
+    {
+        "id": "proj_02",
+        "batch": batch2,
+        "title": "Multi-Agent Swarm for Automated Code Reviews",
+        "description": "Construct a decentralized LLM agent swarm using LangChain and Gemini 3.7 to perform automated AST parsing, security audits, and pull request reviews.",
+        "category": "Artificial Intelligence & Agents",
+        "tier": "advanced",
+        "status": "in_progress",
+        "assignedStudentIds": [rohan.id, aarav.id],
+        "technologies": ["Python", "Gemini 3.7", "LangChain", "FastAPI", "VectorDB"],
+        "deliverables": ["Agent Orchestrator", "Security Linter Plugin", "Benchmark Report"],
+        "startDate": (date.today() - timedelta(days=10)).strftime("%Y-%m-%d"),
+        "startTime": "10:00",
+        "deadline": (date.today() + timedelta(days=10)).strftime("%Y-%m-%d"),
+        "deadlineTime": "23:59",
+        "githubRepo": "https://github.com/mind2i-interns/agent-swarm-reviewer",
+        "points": 150
+    },
+    {
+        "id": "proj_03",
+        "batch": batch3,
+        "title": "Zero-Downtime Kubernetes Blue/Green Deployment Pipeline",
+        "description": "Architect a production-grade CI/CD pipeline with GitHub Actions, Terraform, and ArgoCD for blue/green rolling deployments on AWS EKS.",
+        "category": "DevOps & Cloud Architecture",
+        "tier": "advanced",
+        "status": "in_progress",
+        "assignedStudentIds": [nikhil.id],
+        "technologies": ["Kubernetes", "AWS EKS", "ArgoCD", "Terraform", "Docker"],
+        "deliverables": ["Terraform Scripts", "ArgoCD Helm Manifests", "Load Balancing Strategy"],
+        "startDate": (date.today() - timedelta(days=12)).strftime("%Y-%m-%d"),
+        "startTime": "09:00",
+        "deadline": (date.today() + timedelta(days=5)).strftime("%Y-%m-%d"),
+        "deadlineTime": "18:00",
+        "githubRepo": "https://github.com/mind2i-interns/k8s-bluegreen-pipeline",
+        "points": 120
+    }
+]
+for p in projects:
+    ProjectAssignment.objects.update_or_create(id=p["id"], defaults=p)
+
+# Submissions
+submissions = [
+    {
+        "id": "sub_varshini_proj_01",
+        "projectId": "proj_01",
+        "student": varshini,
+        "studentName": varshini.name,
+        "batchId": batch1.id,
+        "githubUrl": "https://github.com/varshini-reddy/mind2i-dataviz",
+        "liveDemoUrl": "https://varshini-dataviz.mind2i.app",
+        "documentationUrl": "https://varshini-dataviz.mind2i.app/docs",
+        "notes": "Implemented custom SVG time-series graphs with full dark-mode and memoized responsive containers.",
+        "status": "passed",
+        "grade": "A+",
+        "feedback": "Outstanding engineering. Exceeded requirements with zero console warnings and 100% WCAG compliance.",
+        "reviewedBy": "Vijaya Kumar Mekala",
+        "submittedAt": (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+    },
+    {
+        "id": "sub_rohan_proj_02",
+        "projectId": "proj_02",
+        "student": rohan,
+        "studentName": rohan.name,
+        "batchId": batch2.id,
+        "githubUrl": "https://github.com/rohan-verma/agentic-swarm",
+        "liveDemoUrl": "https://agent-swarm.mind2i.app",
+        "notes": "Created 3 specialized agents: Security Auditor, Performance Profiler, and Syntax Optimizer.",
+        "status": "in_review",
+        "grade": "",
+        "feedback": "Under evaluation by Lead Architect.",
+        "reviewedBy": "Prof. Ananya Varma",
+        "submittedAt": date.today().strftime("%Y-%m-%d")
+    }
+]
+for sub in submissions:
+    ProjectSubmission.objects.update_or_create(id=sub["id"], defaults=sub)
+
+print("Seeded Project Assignments and Submissions.")
+
+# 11. Seed Profile Evaluation Rounds & Consensus Reviews
+standard_rounds = [
+    "System Architecture & System Defense",
+    "Core Technical & Code Quality Review",
+    "Industry Placement & Behavioral Readiness"
+]
+for b in batches:
+    for r_name in standard_rounds:
+        BatchEvaluationRound.objects.update_or_create(
+            id=f"round_{b.id}_{abs(hash(r_name)) % 1000000}",
+            defaults={
+                "batch": b,
+                "roundName": r_name,
+                "isDeleted": False
+            }
+        )
+
+# Seed Varshini's Completed Evaluations across all rounds
+varshini_evals_data = [
+    {
+        "id": "eval_vk_varshini",
+        "studentId": varshini.id,
+        "batchId": batch1.id,
+        "reviewerName": "Vijaya Kumar Mekala",
+        "reviewerRole": "Lead Evaluator & Program Director",
+        "evaluationName": "System Architecture & System Defense",
+        "roundName": "System Architecture & System Defense",
+        "roundNumber": 1,
+        "evaluatorAvatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=VijayaKumar",
+        "evaluatedAt": "2026-09-08T10:00:00.000Z",
+        "communicationScore": 92,
+        "communicationNotes": "Extremely articulate defense of microservices partition tolerance and CAP theorem tradeoffs.",
+        "grammarScore": 95,
+        "grammarNotes": "Flawless technical vocabulary and clear documentation syntax.",
+        "fluencyScore": 90,
+        "fluencyNotes": "Confident delivery under probing questions on DB sharding.",
+        "projectScore": 94,
+        "projectNotes": "Production-ready backend with automated pytest suite and containerization.",
+        "customNotes": "One of the top candidates in this cohort. Strongly recommended for high-impact software engineering roles.",
+        "overallRating": 93,
+        "aiVerdict": "Distinction Ready",
+        "aiSummary": "Demonstrates exceptional technical maturity, clean architectural design patterns, and robust communication skills.",
+        "aiStrengths": ["Distributed Systems Defense", "Async FastAPI & SQLAlchemy", "Docker Optimization"],
+        "aiGrowthAreas": ["Deep dive into Kubernetes multi-region ingress"],
+        "isAIGenerated": False
+    },
+    {
+        "id": "eval_sr_varshini",
+        "studentId": varshini.id,
+        "batchId": batch1.id,
+        "reviewerName": "Dr. S. Rajesh",
+        "reviewerRole": "Principal Software Architect & Tech Faculty",
+        "evaluationName": "System Architecture & System Defense",
+        "roundName": "System Architecture & System Defense",
+        "roundNumber": 1,
+        "evaluatorAvatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=RajeshFaculty",
+        "evaluatedAt": "2026-09-08T11:30:00.000Z",
+        "communicationScore": 88,
+        "communicationNotes": "Clear architectural diagrams and thorough understanding of Redis caching strategies.",
+        "grammarScore": 90,
+        "grammarNotes": "Professional and well-organized responses.",
+        "fluencyScore": 86,
+        "fluencyNotes": "Engaged with interviewer prompts thoughtfully.",
+        "projectScore": 92,
+        "projectNotes": "Clean codebase with comprehensive unit tests and CI/CD config.",
+        "customNotes": "Solid technical grasp of asynchronous programming.",
+        "overallRating": 89,
+        "isAIGenerated": False
+    }
+]
+InternEvaluationRound.objects.update_or_create(
+    student=varshini,
+    roundName="System Architecture & System Defense",
+    defaults={
+        "id": f"eval_{varshini.id}_sys_arch",
+        "batch": batch1,
+        "evaluationsData": varshini_evals_data,
+        "consensusScore": 91.0
+    }
+)
+
+# Seed Pooja's Evaluations
+pooja_evals_data = [
+    {
+        "id": "eval_sr_pooja",
+        "studentId": pooja.id,
+        "batchId": batch1.id,
+        "reviewerName": "Dr. S. Rajesh",
+        "reviewerRole": "Principal Software Architect & Tech Faculty",
+        "evaluationName": "System Architecture & System Defense",
+        "roundName": "System Architecture & System Defense",
+        "roundNumber": 1,
+        "evaluatorAvatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=RajeshFaculty",
+        "evaluatedAt": "2026-09-07T14:00:00.000Z",
+        "communicationScore": 86,
+        "communicationNotes": "Very clear walkthrough of UI/UX accessibility patterns and color contrast algorithms.",
+        "grammarScore": 92,
+        "grammarNotes": "Well written specifications and design doc.",
+        "fluencyScore": 88,
+        "fluencyNotes": "Polished presentation demeanor.",
+        "projectScore": 90,
+        "projectNotes": "Impressive Figma to React token translation engine.",
+        "customNotes": "Strong candidate for full-stack product engineering.",
+        "overallRating": 89,
+        "isAIGenerated": False
+    }
+]
+InternEvaluationRound.objects.update_or_create(
+    student=pooja,
+    roundName="System Architecture & System Defense",
+    defaults={
+        "id": f"eval_{pooja.id}_sys_arch",
+        "batch": batch1,
+        "evaluationsData": pooja_evals_data,
+        "consensusScore": 89.0
+    }
+)
+
+# Seed Notifications
+notifications = [
+    {
+        "id": "notif_01",
+        "recipientRole": "admin",
+        "title": "New Interview Request Logged",
+        "message": "Aipoch Systems requested an interview with Varshini Reddy.",
+        "type": "interview",
+        "actionTab": "interviews",
+        "timestamp": datetime.now().isoformat(),
+        "isRead": False
+    },
+    {
+        "id": "notif_02",
+        "recipientRole": "all",
+        "title": "System Update: PostgreSQL Backend Connected",
+        "message": "Real-time synchronization for evaluations, shifts, attendance, and projects is now online.",
+        "type": "system",
+        "actionTab": "dashboard",
+        "timestamp": datetime.now().isoformat(),
+        "isRead": False
+    }
+]
+for n in notifications:
+    AppNotification.objects.update_or_create(id=n["id"], defaults=n)
+
+print("Seeded Faculty Evaluation Rounds and Notifications.")
+print("All rich mock and real-time backend data seeded successfully into PostgreSQL!")

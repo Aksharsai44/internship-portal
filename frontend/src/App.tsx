@@ -25,6 +25,7 @@ import {
   AppNotification,
   InternEvaluation,
   InternResource,
+  isDemoStudent,
 } from "./types";
 import {
   INITIAL_PROJECT_ASSIGNMENTS,
@@ -39,7 +40,7 @@ import {
   INITIAL_PUNCH_LOGS,
   INITIAL_DAILY_ACTIVITY_LOGS,
 } from "./data/attendanceData";
-import { INITIAL_RESUME_DATA } from "./data/mockResumeData";
+import { INITIAL_RESUME_DATA, createEmptyResumeData } from "./data/mockResumeData";
 import { INITIAL_NOTIFICATIONS } from "./data/notificationData";
 import { AssignedProjectsKanbanView } from "./components/AssignedProjectsKanbanView";
 import {
@@ -190,7 +191,7 @@ export default function App() {
       return initialStudents.map((s) => ({
         ...s,
         evaluation: savedEvals[s.id] || s.evaluation,
-        resources: savedResources[s.id] || s.resources || DEFAULT_SAMPLE_RESOURCES(s.id, s.batchId),
+        resources: savedResources[s.id] || s.resources || (isDemoStudent(s) ? DEFAULT_SAMPLE_RESOURCES(s.id, s.batchId) : []),
         reflectionVideo: savedVideos[s.id] || s.reflectionVideo,
       }));
     } catch {
@@ -233,9 +234,9 @@ export default function App() {
           deadlineTime: p.deadlineTime || "23:59",
         }));
       }
-      return INITIAL_PROJECT_ASSIGNMENTS;
+      return [];
     } catch {
-      return INITIAL_PROJECT_ASSIGNMENTS;
+      return [];
     }
   });
 
@@ -243,21 +244,11 @@ export default function App() {
     try {
       const saved = localStorage.getItem("mind2i_project_submissions");
       if (saved) {
-        const parsed: ProjectSubmission[] = JSON.parse(saved);
-        const existingIds = new Set(parsed.map((s) => s.id));
-        const missing = INITIAL_PROJECT_SUBMISSIONS.filter((s) => !existingIds.has(s.id));
-        if (missing.length > 0) {
-          const merged = [...parsed, ...missing];
-          try {
-            localStorage.setItem("mind2i_project_submissions", JSON.stringify(merged));
-          } catch {}
-          return merged;
-        }
-        return parsed;
+        return JSON.parse(saved);
       }
-      return INITIAL_PROJECT_SUBMISSIONS;
+      return [];
     } catch {
-      return INITIAL_PROJECT_SUBMISSIONS;
+      return [];
     }
   });
 
@@ -287,19 +278,11 @@ export default function App() {
     try {
       const saved = localStorage.getItem("mind2i_roster_assignments");
       if (saved) {
-        const parsed: InternRosterAssignment[] = JSON.parse(saved);
-        return parsed.map((item) => {
-          const initMatch = INITIAL_ROSTER_ASSIGNMENTS.find((i) => i.internId === item.internId);
-          return {
-            ...item,
-            batchId: item.batchId || initMatch?.batchId || "batch_ai",
-            batchName: item.batchName || initMatch?.batchName || "Full-Stack AI Engineering",
-          };
-        });
+        return JSON.parse(saved);
       }
-      return INITIAL_ROSTER_ASSIGNMENTS;
+      return [];
     } catch {
-      return INITIAL_ROSTER_ASSIGNMENTS;
+      return [];
     }
   });
 
@@ -307,24 +290,20 @@ export default function App() {
     try {
       const saved = localStorage.getItem("mind2i_attendance_records");
       if (saved) {
-        const parsed: AttendanceRecord[] = JSON.parse(saved);
-        // Filter out any stale future attendance records past today (Sep 6, 2026), keeping only valid historical records and holidays/leaves
-        return parsed.filter(
-          (r) => r.date <= "2026-09-06" || r.status === "holiday" || r.status === "on_leave"
-        );
+        return JSON.parse(saved);
       }
-      return INITIAL_ATTENDANCE_RECORDS;
+      return [];
     } catch {
-      return INITIAL_ATTENDANCE_RECORDS;
+      return [];
     }
   });
 
   const [punchLogs, setPunchLogs] = useState<PunchLogEntry[]>(() => {
     try {
       const saved = localStorage.getItem("mind2i_punch_logs");
-      return saved ? JSON.parse(saved) : INITIAL_PUNCH_LOGS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_PUNCH_LOGS;
+      return [];
     }
   });
 
@@ -332,21 +311,11 @@ export default function App() {
     try {
       const saved = localStorage.getItem("mind2i_daily_activity_logs");
       if (saved) {
-        const parsed: DailyActivityLog[] = JSON.parse(saved);
-        if (parsed.length === 0) return INITIAL_DAILY_ACTIVITY_LOGS;
-        return parsed.map((item) => {
-          const initMatch = INITIAL_DAILY_ACTIVITY_LOGS.find((i) => i.id === item.id);
-          return {
-            ...item,
-            batchId: item.batchId || initMatch?.batchId || "batch_ai",
-            batchName: item.batchName || initMatch?.batchName || "Full-Stack AI Engineering",
-            status: item.status || initMatch?.status || "pending",
-          };
-        });
+        return JSON.parse(saved);
       }
-      return INITIAL_DAILY_ACTIVITY_LOGS;
+      return [];
     } catch {
-      return INITIAL_DAILY_ACTIVITY_LOGS;
+      return [];
     }
   });
 
@@ -363,21 +332,20 @@ export default function App() {
     try {
       const saved = localStorage.getItem("mind2i_leave_requests");
       if (saved) {
-        const parsed: LeaveRequest[] = JSON.parse(saved);
-        if (parsed.length > 0) return parsed;
+        return JSON.parse(saved);
       }
-      return INITIAL_LEAVE_REQUESTS;
+      return [];
     } catch {
-      return INITIAL_LEAVE_REQUESTS;
+      return [];
     }
   });
 
   const [resumeData, setResumeData] = useState<InternResumeData>(() => {
     try {
       const saved = localStorage.getItem("mind2i_resume_data");
-      return saved ? JSON.parse(saved) : INITIAL_RESUME_DATA;
+      return saved ? JSON.parse(saved) : createEmptyResumeData();
     } catch {
-      return INITIAL_RESUME_DATA;
+      return createEmptyResumeData();
     }
   });
 
@@ -431,29 +399,47 @@ export default function App() {
 
   useEffect(() => {
     try {
+      if (currentStudent?.id) {
+        const customResumes = JSON.parse(localStorage.getItem("m2i_custom_resumes") || "{}");
+        customResumes[currentStudent.id] = resumeData;
+        localStorage.setItem("m2i_custom_resumes", JSON.stringify(customResumes));
+      }
       localStorage.setItem("mind2i_resume_data", JSON.stringify(resumeData));
     } catch {}
-  }, [resumeData]);
+  }, [resumeData, currentStudent?.id]);
 
   // Synchronize resumeData with the current student so other names never bleed through
   useEffect(() => {
     if (currentStudent && userRole === "student") {
-      setResumeData((prev) => ({
-        ...prev,
-        internId: currentStudent.id,
-        internName: currentStudent.name,
-        email: currentStudent.email || prev.email,
-        mobile: currentStudent.mobile || prev.mobile,
-        location: currentStudent.city ? `${currentStudent.city}, ${currentStudent.state || "India"}` : (currentStudent.college || prev.location),
-        githubUrl: currentStudent.githubUrl || (prev.githubUrl && !prev.githubUrl.includes("aksharsai") ? prev.githubUrl : `github.com/${currentStudent.name.toLowerCase().replace(/\s+/g, "")}`),
-        linkedinUrl: currentStudent.linkedinUrl || (prev.linkedinUrl && !prev.linkedinUrl.includes("aksharsai") ? prev.linkedinUrl : `linkedin.com/in/${currentStudent.name.toLowerCase().replace(/\s+/g, "")}`),
-        skills: currentStudent.skills && currentStudent.skills.length > 0 ? currentStudent.skills : prev.skills,
-        scorecard: {
-          ...prev.scorecard,
-          lastScannedFileName: `${currentStudent.name.replace(/\s+/g, "_")}_Resume.pdf`,
-          executiveSummary: `Analysis of ${currentStudent.name}'s resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements position ${currentStudent.name} in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.`,
-        },
-      }));
+      try {
+        const customResumes = JSON.parse(localStorage.getItem("m2i_custom_resumes") || "{}");
+        if (customResumes[currentStudent.id]) {
+          setResumeData(customResumes[currentStudent.id]);
+          return;
+        }
+      } catch {}
+
+      if (!isDemoStudent(currentStudent)) {
+        // Fresh student starts with clean empty resume data
+        setResumeData(createEmptyResumeData(currentStudent));
+      } else {
+        setResumeData((prev) => ({
+          ...prev,
+          internId: currentStudent.id,
+          internName: currentStudent.name,
+          email: currentStudent.email || prev.email,
+          mobile: currentStudent.mobile || prev.mobile,
+          location: currentStudent.city ? `${currentStudent.city}, ${currentStudent.state || "India"}` : (currentStudent.college || prev.location),
+          githubUrl: currentStudent.githubUrl || (prev.githubUrl && !prev.githubUrl.includes("aksharsai") ? prev.githubUrl : `github.com/${currentStudent.name.toLowerCase().replace(/\s+/g, "")}`),
+          linkedinUrl: currentStudent.linkedinUrl || (prev.linkedinUrl && !prev.linkedinUrl.includes("aksharsai") ? prev.linkedinUrl : `linkedin.com/in/${currentStudent.name.toLowerCase().replace(/\s+/g, "")}`),
+          skills: currentStudent.skills && currentStudent.skills.length > 0 ? currentStudent.skills : prev.skills,
+          scorecard: {
+            ...prev.scorecard,
+            lastScannedFileName: `${currentStudent.name.replace(/\s+/g, "_")}_Resume.pdf`,
+            executiveSummary: `Analysis of ${currentStudent.name}'s resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements position ${currentStudent.name} in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.`,
+          },
+        }));
+      }
     }
   }, [currentStudent?.id, currentStudent?.name, userRole]);
 
@@ -507,16 +493,25 @@ export default function App() {
 
   const handleCreateProjectAssignment = (newProj: ProjectAssignment) => {
     setProjectAssignments((prev) => [newProj, ...prev]);
+    axios.post("/api/project-assignments/", newProj).catch((err) => {
+      console.warn("Failed to create project assignment on backend:", err);
+    });
   };
 
   const handleUpdateProjectAssignment = (updatedProj: ProjectAssignment) => {
     setProjectAssignments((prev) =>
       prev.map((p) => (p.id === updatedProj.id ? updatedProj : p))
     );
+    axios.put(`/api/project-assignments/${updatedProj.id}/`, updatedProj)
+      .catch(() => axios.post("/api/project-assignments/", updatedProj))
+      .catch((err) => console.warn("Failed to update project assignment on backend:", err));
   };
 
   const handleDeleteProjectAssignment = (projectId: string) => {
     setProjectAssignments((prev) => prev.filter((p) => p.id !== projectId));
+    axios.delete(`/api/project-assignments/${projectId}/`).catch((err) => {
+      console.warn("Failed to delete project assignment on backend:", err);
+    });
   };
 
   const handleSubmitProjectWork = (submission: ProjectSubmission) => {
@@ -529,6 +524,10 @@ export default function App() {
     setProjectAssignments((prev) =>
       prev.map((p) => (p.id === submission.projectId ? { ...p, status: "in_progress" } : p))
     );
+    axios.post("/api/project-submissions/", submission)
+      .catch(() => axios.put(`/api/project-submissions/${submission.id}/`, submission))
+      .catch((err) => console.warn("Failed to save project submission to backend:", err));
+    axios.patch(`/api/project-assignments/${submission.projectId}/`, { status: "in_progress" }).catch(() => {});
   };
 
   const handleUpdateProjectSubmission = (updatedSub: ProjectSubmission) => {
@@ -539,7 +538,11 @@ export default function App() {
       setProjectAssignments((prev) =>
         prev.map((p) => (p.id === updatedSub.projectId ? { ...p, status: "completed" } : p))
       );
+      axios.patch(`/api/project-assignments/${updatedSub.projectId}/`, { status: "completed" }).catch(() => {});
     }
+    axios.put(`/api/project-submissions/${updatedSub.id}/`, updatedSub)
+      .catch(() => axios.post("/api/project-submissions/", updatedSub))
+      .catch((err) => console.warn("Failed to update project submission on backend:", err));
   };
 
   const handleBulkUpdateProjectSubmissions = (updatedSubs: ProjectSubmission[]) => {
@@ -553,7 +556,88 @@ export default function App() {
       setProjectAssignments((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, status: "completed" } : p))
       );
+      axios.patch(`/api/project-assignments/${projectId}/`, { status: "completed" }).catch(() => {});
     }
+    updatedSubs.forEach((sub) => {
+      axios.put(`/api/project-submissions/${sub.id}/`, sub)
+        .catch(() => axios.post("/api/project-submissions/", sub))
+        .catch((err) => console.warn("Failed to save bulk submission on backend:", err));
+    });
+  };
+
+  const handleUpdateShiftPatterns = (newPatterns: ShiftPattern[]) => {
+    setShiftPatterns(newPatterns);
+    axios.post("/api/shift-patterns/bulk_sync/", { items: newPatterns }).catch((err) => {
+      console.warn("Failed to sync shift patterns to backend:", err);
+    });
+  };
+
+  const handleUpdateRosterAssignments = (newRoster: InternRosterAssignment[]) => {
+    setRosterAssignments(newRoster);
+    axios.post("/api/roster-assignments/bulk_sync/", { items: newRoster }).catch((err) => {
+      console.warn("Failed to sync roster assignments to backend:", err);
+    });
+  };
+
+  const handleUpdateAttendanceRecords = (
+    updater: AttendanceRecord[] | ((prev: AttendanceRecord[]) => AttendanceRecord[])
+  ) => {
+    setAttendanceRecords((prev) => {
+      const updated = typeof updater === "function" ? updater(prev) : updater;
+      axios.post("/api/attendance-records/bulk_create_or_update/", { records: updated }).catch((err) => {
+        console.warn("Failed to sync attendance records to backend:", err);
+      });
+      return updated;
+    });
+  };
+
+  const handleUpdatePunchLogs = (
+    updater: PunchLogEntry[] | ((prev: PunchLogEntry[]) => PunchLogEntry[])
+  ) => {
+    setPunchLogs((prev) => {
+      const updated = typeof updater === "function" ? updater(prev) : updater;
+      if (updated.length > 0) {
+        const latest = updated[0];
+        axios.post("/api/punch-logs/", latest).catch((err) => {
+          console.warn("Failed to save punch log to backend:", err);
+        });
+      }
+      return updated;
+    });
+  };
+
+  const handleUpdateHolidays = (newHols: HolidayEvent[]) => {
+    setHolidays(newHols);
+    axios.post("/api/holidays/bulk_sync/", { items: newHols }).catch((err) => {
+      console.warn("Failed to sync holidays to backend:", err);
+    });
+  };
+
+  const handleUpdateLeaveRequests = (
+    updater: LeaveRequest[] | ((prev: LeaveRequest[]) => LeaveRequest[])
+  ) => {
+    setLeaveRequests((prev) => {
+      const updated = typeof updater === "function" ? updater(prev) : updater;
+      if (updated.length > 0) {
+        const latest = updated[0];
+        axios.put(`/api/leave-requests/${latest.id}/`, latest)
+          .catch(() => axios.post("/api/leave-requests/", latest))
+          .catch((err) => console.warn("Failed to save leave request to backend:", err));
+      }
+      return updated;
+    });
+  };
+
+  const handleUpdateActivityLogs = (
+    updater: DailyActivityLog[] | ((prev: DailyActivityLog[]) => DailyActivityLog[])
+  ) => {
+    setDailyActivityLogs((prev) => {
+      const updated = typeof updater === "function" ? updater(prev) : updater;
+      axios.post("/api/daily-activity-logs/bulk_sync/", { items: updated }).catch((err) => {
+        console.warn("Failed to sync daily activity logs to backend:", err);
+      });
+      return updated;
+    });
   };
 
   const handleToggleShortlist = (internId: string) => {
@@ -679,6 +763,9 @@ export default function App() {
       isRead: false,
     };
     setNotifications((prev) => [fullNotif, ...prev]);
+    axios.post("/api/notifications/", fullNotif).catch((err) => {
+      console.warn("Failed to save notification to backend:", err);
+    });
   };
 
   const userNotifications = useMemo(() => {
@@ -714,6 +801,7 @@ export default function App() {
     setNotifications((prev) =>
       prev.map((n) => (n.id === notifId ? { ...n, isRead: true } : n))
     );
+    axios.post(`/api/notifications/${notifId}/mark_read/`).catch(() => {});
   };
 
   const handleMarkAllNotificationsAsRead = () => {
@@ -722,12 +810,14 @@ export default function App() {
       prev.map((n) => (userNotifIds.has(n.id) ? { ...n, isRead: true } : n))
     );
     showToastNotification("All notifications marked as read.");
+    axios.post("/api/notifications/mark_all_read/", { role: userRole }).catch(() => {});
   };
 
   const handleClearAllNotifications = () => {
     const userNotifIds = new Set(userNotifications.map((n) => n.id));
     setNotifications((prev) => prev.filter((n) => !userNotifIds.has(n.id)));
     showToastNotification("Notifications cleared.");
+    axios.post("/api/notifications/clear_all/", { role: userRole }).catch(() => {});
   };
 
   const handleNotificationClick = (notif: AppNotification) => {
@@ -858,9 +948,116 @@ export default function App() {
     fetchInterviewRequests();
     const reqTimer = setInterval(fetchInterviewRequests, 4000);
 
+    // Fetch Project Assignments & Submissions
+    const fetchProjects = () => {
+      axios.get('/api/project-assignments/')
+        .then(res => {
+          if (Array.isArray(res.data)) {
+            setProjectAssignments(res.data);
+          }
+        })
+        .catch(err => console.warn("API Fetch Error (Project Assignments):", err));
+
+      axios.get('/api/project-submissions/')
+        .then(res => {
+          if (Array.isArray(res.data)) {
+            setProjectSubmissions(res.data);
+          }
+        })
+        .catch(err => console.warn("API Fetch Error (Project Submissions):", err));
+    };
+    fetchProjects();
+    const projectsTimer = setInterval(fetchProjects, 4000);
+
+    // Fetch Attendance & Shifts Data
+    const fetchAttendanceData = () => {
+      axios.get('/api/shift-patterns/')
+        .then(res => {
+          if (Array.isArray(res.data)) setShiftPatterns(res.data.length > 0 ? res.data : INITIAL_SHIFT_PATTERNS);
+        })
+        .catch(err => console.warn("API Fetch Error (Shift Patterns):", err));
+
+      axios.get('/api/roster-assignments/')
+        .then(res => {
+          if (Array.isArray(res.data)) setRosterAssignments(res.data);
+        })
+        .catch(err => console.warn("API Fetch Error (Roster Assignments):", err));
+
+      axios.get('/api/attendance-records/')
+        .then(res => {
+          if (Array.isArray(res.data)) setAttendanceRecords(res.data);
+        })
+        .catch(err => console.warn("API Fetch Error (Attendance Records):", err));
+
+      axios.get('/api/punch-logs/')
+        .then(res => {
+          if (Array.isArray(res.data)) setPunchLogs(res.data);
+        })
+        .catch(err => console.warn("API Fetch Error (Punch Logs):", err));
+
+      axios.get('/api/holidays/')
+        .then(res => {
+          if (Array.isArray(res.data)) setHolidays(res.data.length > 0 ? res.data : INITIAL_HOLIDAYS);
+        })
+        .catch(err => console.warn("API Fetch Error (Holidays):", err));
+
+      axios.get('/api/leave-requests/')
+        .then(res => {
+          if (Array.isArray(res.data)) setLeaveRequests(res.data);
+        })
+        .catch(err => console.warn("API Fetch Error (Leave Requests):", err));
+    };
+    fetchAttendanceData();
+    const attendanceTimer = setInterval(fetchAttendanceData, 4000);
+
+    // Fetch Daily Activity Logs
+    const fetchDailyLogs = () => {
+      axios.get('/api/daily-activity-logs/')
+        .then(res => {
+          if (Array.isArray(res.data)) setDailyActivityLogs(res.data);
+        })
+        .catch(err => console.warn("API Fetch Error (Daily Logs):", err));
+    };
+    fetchDailyLogs();
+    const dailyLogsTimer = setInterval(fetchDailyLogs, 4000);
+
+    // Fetch Notifications
+    const fetchNotifications = () => {
+      axios.get('/api/notifications/')
+        .then(res => {
+          if (Array.isArray(res.data)) setNotifications(res.data);
+        })
+        .catch(err => console.warn("API Fetch Error (Notifications):", err));
+    };
+    fetchNotifications();
+    const notifTimer = setInterval(fetchNotifications, 3500);
+
+    // Fetch Intern Resources Vault
+    axios.get('/api/intern-resources/')
+      .then(res => {
+        if (Array.isArray(res.data)) {
+          const resMap: Record<string, InternResource[]> = {};
+          res.data.forEach((r: InternResource) => {
+            if (!resMap[r.studentId]) resMap[r.studentId] = [];
+            resMap[r.studentId].push(r);
+          });
+          setStudents((prev) =>
+            prev.map((s) => ({
+              ...s,
+              resources: resMap[s.id] || [],
+            }))
+          );
+        }
+      })
+      .catch(err => console.warn("API Fetch Error (Intern Resources):", err));
+
     return () => {
       clearInterval(clientTimer);
       clearInterval(reqTimer);
+      clearInterval(projectsTimer);
+      clearInterval(attendanceTimer);
+      clearInterval(dailyLogsTimer);
+      clearInterval(notifTimer);
     };
   }, []);
 
@@ -1105,6 +1302,10 @@ export default function App() {
 
     setInspectedStudent((prev) => (prev && prev.id === studentId ? { ...prev, evaluation } : prev));
     setCurrentStudent((prev) => (prev && prev.id === studentId ? { ...prev, evaluation } : prev));
+
+    axios.post("/api/evaluations/bulk_sync/", { [studentId]: [evaluation] }).catch((err) => {
+      console.warn("Failed to sync student evaluation to backend:", err);
+    });
   };
 
   const handleUpdateStudentResources = (studentId: string, resources: InternResource[]) => {
@@ -1118,6 +1319,9 @@ export default function App() {
     } catch (err) {
       console.error("Failed to save resources to localStorage", err);
     }
+    resources.forEach((r) => {
+      axios.post("/api/intern-resources/", { ...r, studentId }).catch(() => {});
+    });
   };
 
   const handleDeleteStudent = (studentId: string) => {
@@ -1194,6 +1398,20 @@ export default function App() {
     if (loggedInUser && loggedInUser.email === updatedStudent.email) {
       setLoggedInUser({ ...loggedInUser, name: updatedStudent.name, avatar: updatedStudent.avatar });
     }
+    axios.patch(`/api/students/${updatedStudent.id}/`, {
+      name: updatedStudent.name,
+      avatar: updatedStudent.avatar,
+      college: updatedStudent.college,
+      branch: updatedStudent.branch,
+      year: updatedStudent.year,
+      phoneNumber: updatedStudent.phoneNumber,
+      linkedinUrl: updatedStudent.linkedinUrl,
+      githubUrl: updatedStudent.githubUrl,
+      portfolioUrl: updatedStudent.portfolioUrl,
+      bio: updatedStudent.bio,
+      skills: updatedStudent.skills,
+      resumeData: updatedStudent.resumeData,
+    }).catch((err) => console.warn("Failed to patch student profile to backend:", err));
   };
 
   const handleDeleteBatch = (batchId: string) => {
@@ -1951,6 +2169,9 @@ export default function App() {
                 students={students}
                 dailyActivityLogs={dailyActivityLogs}
                 projectSubmissions={projectSubmissions}
+                attendanceRecords={attendanceRecords}
+                resumeData={resumeData}
+                assignmentSubmissions={projectSubmissions}
                 onUpdateStudentEvaluation={handleUpdateStudentEvaluation}
                 onUpdateStudentResources={handleUpdateStudentResources}
                 onViewStudentReport={(s) => setInspectedStudent(s)}
@@ -2033,15 +2254,21 @@ export default function App() {
                 holidays={holidays}
                 dailyActivityLogs={dailyActivityLogs}
                 leaveRequests={leaveRequests}
-                resumeData={resumeData}
+                resumeData={currentStudent.resumeData || resumeData}
               />
             )}
 
             {activeTab === "resume_builder" && currentStudent && (
               <AIResumeBuilderView
                 currentStudent={currentStudent}
-                resumeData={resumeData}
-                onUpdateResumeData={setResumeData}
+                resumeData={currentStudent.resumeData || resumeData}
+                onUpdateResumeData={(newResume) => {
+                  setResumeData(newResume);
+                  handleUpdateStudentProfile({
+                    ...currentStudent,
+                    resumeData: newResume,
+                  });
+                }}
                 onToast={showToastNotification}
               />
             )}
@@ -2075,8 +2302,13 @@ export default function App() {
 
             {activeTab === "interviews" && userRole === "admin" && (
               <InterviewRequestsView
-                userRole="admin" clients={clients} interviewRequests={interviewRequests}
-                students={students} batches={batches} onUpdateRequests={setInterviewRequests}
+                userRole="admin"
+                clients={clients}
+                interviewRequests={interviewRequests}
+                students={students}
+                batches={batches}
+                selectedBatch={selectedBatch}
+                onUpdateRequests={setInterviewRequests}
               />
             )}
 
@@ -2093,11 +2325,12 @@ export default function App() {
                 holidays={holidays}
                 leaveRequests={leaveRequests}
                 batches={batches}
+                selectedBatch={selectedBatch}
                 students={students}
-                onUpdateShiftPatterns={setShiftPatterns}
-                onUpdateRosterAssignments={setRosterAssignments}
-                onUpdateHolidays={setHolidays}
-                onUpdateLeaveRequests={setLeaveRequests}
+                onUpdateShiftPatterns={handleUpdateShiftPatterns}
+                onUpdateRosterAssignments={handleUpdateRosterAssignments}
+                onUpdateHolidays={handleUpdateHolidays}
+                onUpdateLeaveRequests={handleUpdateLeaveRequests}
                 onAddNotification={handleAddNotification}
                 onToast={showToastNotification}
                 onNavigateToDailyLogs={() => setActiveTab("daily_logs")}
@@ -2108,8 +2341,9 @@ export default function App() {
               <AdminDailyLogsReviewView
                 activityLogs={dailyActivityLogs}
                 batches={batches}
+                selectedBatch={selectedBatch}
                 students={students}
-                onUpdateActivityLogs={setDailyActivityLogs}
+                onUpdateActivityLogs={handleUpdateActivityLogs}
                 onToast={showToastNotification}
               />
             )}
@@ -2155,9 +2389,12 @@ export default function App() {
                 punchLogs={punchLogs}
                 holidays={holidays}
                 leaveRequests={leaveRequests}
-                onUpdatePunchLogs={setPunchLogs}
-                onUpdateAttendanceRecords={setAttendanceRecords}
-                onCreateLeaveRequest={(req) => setLeaveRequests((prev) => [req, ...prev])}
+                onUpdatePunchLogs={handleUpdatePunchLogs}
+                onUpdateAttendanceRecords={handleUpdateAttendanceRecords}
+                onCreateLeaveRequest={(req) => {
+                  handleUpdateLeaveRequests((prev) => [req, ...prev]);
+                  axios.post("/api/leave-requests/", req).catch(() => {});
+                }}
                 onAddNotification={handleAddNotification}
                 onToast={showToastNotification}
               />
@@ -2167,7 +2404,7 @@ export default function App() {
               <DailyActivityLogView
                 currentStudent={currentStudent}
                 activityLogs={dailyActivityLogs}
-                onUpdateActivityLogs={setDailyActivityLogs}
+                onUpdateActivityLogs={handleUpdateActivityLogs}
                 onToast={showToastNotification}
               />
             )}
@@ -2296,7 +2533,7 @@ export default function App() {
           holidays={holidays}
           dailyActivityLogs={dailyActivityLogs}
           leaveRequests={leaveRequests}
-          resumeData={resumeData}
+          resumeData={inspectedStudent.resumeData || resumeData}
         />
       )}
 

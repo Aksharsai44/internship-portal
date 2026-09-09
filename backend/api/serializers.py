@@ -4,7 +4,10 @@ from .models import (
     Batch, Student, Score, LearnHubModule, LearnHubStudentProgress,
     LiveQuestion, LiveQAResponse, Assignment, AssignmentSubmission,
     CertificateTemplate, AdminUser, AppSettingsModel, ScheduledMeeting,
-    ClientUser, InterviewRequest
+    ClientUser, InterviewRequest,
+    InternEvaluationRound, BatchEvaluationRound, ProjectAssignment, ProjectSubmission,
+    ShiftPattern, InternRosterAssignment, AttendanceRecord, PunchLogEntry,
+    LeaveRequest, HolidayEvent, DailyActivityLog, AppNotification, InternResource
 )
 
 
@@ -50,6 +53,8 @@ class StudentSerializer(serializers.ModelSerializer):
                 'assignmentScore': 0,
                 'overallAccuracy': 0.0
             }
+        if not ret.get('resumeData'):
+            ret['resumeData'] = {}
         return ret
 
     def validate(self, attrs):
@@ -524,5 +529,277 @@ class ScheduledMeetingSerializer(serializers.ModelSerializer):
             data['batchName'] = instance.batch.name
         else:
             data['batchId'] = None
-            data['batchName'] = "All Batches"
         return data
+
+
+class InternEvaluationRoundSerializer(serializers.ModelSerializer):
+    studentId = serializers.CharField(source='student.id', read_only=True)
+    studentName = serializers.CharField(source='student.name', read_only=True)
+    batchId = serializers.CharField(source='batch.id', read_only=True, allow_null=True)
+
+    class Meta:
+        model = InternEvaluationRound
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        round_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"eval_{int(time.time()*1000)}"
+        student_val = validated_data.get('student') or self.initial_data.get('student') or self.initial_data.get('studentId')
+        batch_val = validated_data.get('batch') or self.initial_data.get('batch') or self.initial_data.get('batchId')
+
+        if student_val and not isinstance(student_val, Student):
+            try:
+                validated_data['student'] = Student.objects.get(id=str(student_val))
+            except Exception:
+                pass
+        if batch_val and not isinstance(batch_val, Batch):
+            try:
+                validated_data['batch'] = Batch.objects.get(id=str(batch_val))
+            except Exception:
+                pass
+
+        instance, _ = InternEvaluationRound.objects.update_or_create(
+            id=round_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class BatchEvaluationRoundSerializer(serializers.ModelSerializer):
+    batchId = serializers.CharField(source='batch.id', read_only=True)
+    batch = serializers.PrimaryKeyRelatedField(queryset=Batch.objects.all(), required=False)
+
+    class Meta:
+        model = BatchEvaluationRound
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': [], 'required': False},
+        }
+
+    def to_internal_value(self, data):
+        data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
+        if 'batchId' in data_copy and 'batch' not in data_copy:
+            data_copy['batch'] = data_copy['batchId']
+        if not data_copy.get('id'):
+            data_copy['id'] = f"bround_{int(time.time()*1000)}"
+        return super().to_internal_value(data_copy)
+
+    def create(self, validated_data):
+        r_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"round_{int(time.time()*1000)}"
+        batch_val = validated_data.get('batch') or self.initial_data.get('batch') or self.initial_data.get('batchId')
+        if batch_val and not isinstance(batch_val, Batch):
+            try:
+                validated_data['batch'] = Batch.objects.get(id=str(batch_val))
+            except Exception:
+                pass
+        instance, _ = BatchEvaluationRound.objects.update_or_create(
+            id=r_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class ProjectAssignmentSerializer(serializers.ModelSerializer):
+    batchId = serializers.CharField(source='batch.id', read_only=True, allow_null=True)
+
+    class Meta:
+        model = ProjectAssignment
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        p_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"proj_{int(time.time()*1000)}"
+        batch_val = validated_data.get('batch') or self.initial_data.get('batch') or self.initial_data.get('batchId')
+        if batch_val and not isinstance(batch_val, Batch):
+            try:
+                validated_data['batch'] = Batch.objects.get(id=str(batch_val))
+            except Exception:
+                pass
+        instance, _ = ProjectAssignment.objects.update_or_create(
+            id=p_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class ProjectSubmissionSerializer(serializers.ModelSerializer):
+    studentId = serializers.CharField(source='student.id', read_only=True, allow_null=True)
+
+    class Meta:
+        model = ProjectSubmission
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        sub_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"sub_{int(time.time()*1000)}"
+        student_val = validated_data.get('student') or self.initial_data.get('student') or self.initial_data.get('studentId')
+        if student_val and not isinstance(student_val, Student):
+            try:
+                validated_data['student'] = Student.objects.get(id=str(student_val))
+            except Exception:
+                pass
+        instance, _ = ProjectSubmission.objects.update_or_create(
+            id=sub_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class ShiftPatternSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShiftPattern
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        s_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"shift_{int(time.time()*1000)}"
+        instance, _ = ShiftPattern.objects.update_or_create(
+            id=s_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class InternRosterAssignmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InternRosterAssignment
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        r_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"roster_{int(time.time()*1000)}"
+        instance, _ = InternRosterAssignment.objects.update_or_create(
+            id=r_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class AttendanceRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AttendanceRecord
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        att_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"att_{int(time.time()*1000)}"
+        instance, _ = AttendanceRecord.objects.update_or_create(
+            id=att_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class PunchLogEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PunchLogEntry
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        p_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"punch_{int(time.time()*1000)}"
+        instance, _ = PunchLogEntry.objects.update_or_create(
+            id=p_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class LeaveRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveRequest
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        l_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"leave_{int(time.time()*1000)}"
+        instance, _ = LeaveRequest.objects.update_or_create(
+            id=l_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class HolidayEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HolidayEvent
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        h_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"hol_{int(time.time()*1000)}"
+        instance, _ = HolidayEvent.objects.update_or_create(
+            id=h_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class DailyActivityLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DailyActivityLog
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        d_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"log_{int(time.time()*1000)}"
+        instance, _ = DailyActivityLog.objects.update_or_create(
+            id=d_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class AppNotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppNotification
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        n_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"notif_{int(time.time()*1000)}"
+        instance, _ = AppNotification.objects.update_or_create(
+            id=n_id,
+            defaults=validated_data
+        )
+        return instance
+
+
+class InternResourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InternResource
+        fields = '__all__'
+        extra_kwargs = {
+            'id': {'validators': []},
+        }
+
+    def create(self, validated_data):
+        r_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"res_{int(time.time()*1000)}"
+        instance, _ = InternResource.objects.update_or_create(
+            id=r_id,
+            defaults=validated_data
+        )
+        return instance
+

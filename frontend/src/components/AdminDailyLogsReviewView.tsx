@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { DailyActivityLog, Batch, Student } from "../types";
 import { analyzeDailyLogWithAI } from "../data/aiReviewEngine";
 import {
@@ -27,6 +27,7 @@ interface AdminDailyLogsReviewViewProps {
   students: Student[];
   onUpdateActivityLogs: (logs: DailyActivityLog[]) => void;
   onToast?: (msg: string) => void;
+  selectedBatch?: Batch;
 }
 
 export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> = ({
@@ -35,10 +36,10 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
   students,
   onUpdateActivityLogs,
   onToast,
+  selectedBatch: selectedBatchProp,
 }) => {
   // Timeframe filter: "day" | "week" | "month" | "all"
   const [timeframe, setTimeframe] = useState<"day" | "week" | "month" | "all">("all");
-  const [selectedBatch, setSelectedBatch] = useState("All Batches");
   const [selectedIntern, setSelectedIntern] = useState("All Interns");
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -49,30 +50,93 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
   const [reviewStatus, setReviewStatus] = useState<"approved" | "needs_revision" | "reviewed">("approved");
   const [reviewFeedback, setReviewFeedback] = useState("");
 
-  // Batch Options
-  const batchOptions = useMemo(() => {
-    const list = ["All Batches"];
-    batches.forEach((b) => {
-      if (b.name && !list.includes(b.name)) list.push(b.name);
-    });
-    activityLogs.forEach((l) => {
-      if (l.batchName && !list.includes(l.batchName)) list.push(l.batchName);
-    });
-    if (list.length === 1) {
-      list.push("Full-Stack AI Engineering", "Summer 2026 UI/UX & Product Design", "Batch 2026-B (Cloud & DevOps)");
-    }
-    return list;
-  }, [batches, activityLogs]);
+  // Active opened batch
+  const activeBatch = selectedBatchProp;
+  const activeBatchName = activeBatch?.name || "";
 
-  // Intern Options
+  // Helper function to check if a log belongs to the active batch
+  const isLogInActiveBatch = (log: DailyActivityLog) => {
+    // If no specific batch is opened or cohort name is empty/all, show all
+    if (!activeBatch || !activeBatchName || activeBatchName === "All Batches" || activeBatch.id === "all") {
+      return true;
+    }
+
+    // 1. Direct name match or substring match
+    if (
+      log.batchName &&
+      (log.batchName.toLowerCase().trim() === activeBatchName.toLowerCase().trim() ||
+        log.batchName.toLowerCase().includes(activeBatchName.toLowerCase()) ||
+        activeBatchName.toLowerCase().includes(log.batchName.toLowerCase()))
+    ) {
+      return true;
+    }
+
+    // 2. Direct batch ID match
+    if (log.batchId && (log.batchId === activeBatch.id || log.batchId === activeBatch.name)) {
+      return true;
+    }
+
+    // 3. Check if student enrolled in this active batch
+    const student = students.find(
+      (s) =>
+        (log.internId && s.id === log.internId) ||
+        (log.internName && s.name.toLowerCase().trim() === log.internName.toLowerCase().trim())
+    );
+    if (student) {
+      if (
+        student.batchId === activeBatch.id ||
+        (student.batchName &&
+          (student.batchName.toLowerCase().includes(activeBatch.name.toLowerCase()) ||
+            activeBatch.name.toLowerCase().includes(student.batchName.toLowerCase())))
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Intern Options scoped to the active opened batch
   const internOptions = useMemo(() => {
     const names = new Set<string>();
-    students.forEach((s) => names.add(s.name));
-    activityLogs.forEach((l) => names.add(l.internName));
-    return ["All Interns", ...Array.from(names)];
-  }, [students, activityLogs]);
 
-  // Filtered Logs
+    if (!activeBatch || !activeBatchName || activeBatchName === "All Batches") {
+      students.forEach((s) => {
+        if (s.name) names.add(s.name);
+      });
+      activityLogs.forEach((l) => {
+        if (l.internName) names.add(l.internName);
+      });
+    } else {
+      students.forEach((s) => {
+        if (
+          s.batchId === activeBatch.id ||
+          (s.batchName &&
+            (s.batchName.toLowerCase().includes(activeBatch.name.toLowerCase()) ||
+              activeBatch.name.toLowerCase().includes(s.batchName.toLowerCase())))
+        ) {
+          if (s.name) names.add(s.name);
+        }
+      });
+
+      activityLogs.forEach((l) => {
+        if (isLogInActiveBatch(l)) {
+          if (l.internName) names.add(l.internName);
+        }
+      });
+    }
+
+    return ["All Interns", ...Array.from(names)];
+  }, [students, activityLogs, activeBatch, activeBatchName]);
+
+  // Reset intern selection if not in new options
+  useEffect(() => {
+    if (selectedIntern !== "All Interns" && !internOptions.includes(selectedIntern)) {
+      setSelectedIntern("All Interns");
+    }
+  }, [internOptions, selectedIntern]);
+
+  // Filtered Logs scoped to the opened batch
   const filteredLogs = useMemo(() => {
     const now = new Date();
 
@@ -86,11 +150,9 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
         if (timeframe === "month" && diffDays > 31.0) return false;
       }
 
-      // 2. Batch check
-      if (selectedBatch !== "All Batches") {
-        const matchesName = log.batchName === selectedBatch;
-        const matchesId = batches.find((b) => b.name === selectedBatch)?.id === log.batchId;
-        if (!matchesName && !matchesId) return false;
+      // 2. Opened Batch check
+      if (!isLogInActiveBatch(log)) {
+        return false;
       }
 
       // 3. Intern check
@@ -120,17 +182,18 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
 
       return true;
     });
-  }, [activityLogs, timeframe, selectedBatch, selectedIntern, statusFilter, searchQuery, batches]);
+  }, [activityLogs, timeframe, activeBatch, activeBatchName, selectedIntern, statusFilter, searchQuery]);
 
-  // Statistics
+  // Statistics scoped to the opened batch
   const stats = useMemo(() => {
-    const total = activityLogs.length;
-    const pending = activityLogs.filter((l) => !l.status || l.status === "pending").length;
-    const approved = activityLogs.filter((l) => l.status === "approved").length;
-    const blockers = activityLogs.filter((l) => l.hasBlockers).length;
-    const aiReviewed = activityLogs.filter((l) => !!l.aiReview).length;
+    const batchLogs = activityLogs.filter((l) => isLogInActiveBatch(l));
+    const total = batchLogs.length;
+    const pending = batchLogs.filter((l) => !l.status || l.status === "pending").length;
+    const approved = batchLogs.filter((l) => l.status === "approved").length;
+    const blockers = batchLogs.filter((l) => l.hasBlockers).length;
+    const aiReviewed = batchLogs.filter((l) => !!l.aiReview).length;
     return { total, pending, approved, blockers, aiReviewed };
-  }, [activityLogs]);
+  }, [activityLogs, activeBatch, activeBatchName]);
 
   // Single AI Auto-Review
   const handleRunSingleAIReview = (log: DailyActivityLog) => {
@@ -214,14 +277,22 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
       {/* ── HEADER BANNER ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-serif font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <span>Intern Daily Logs & AI Reviews</span>
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-800">
-              Admin Portal
-            </span>
-          </h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-2xl sm:text-3xl font-serif font-black text-slate-900 tracking-tight flex items-center gap-3">
+              <span>Intern Daily Logs & AI Reviews</span>
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-800">
+                Admin Portal
+              </span>
+            </h2>
+            {activeBatchName && activeBatchName !== "All Batches" && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+                Opened Cohort: {activeBatchName}
+              </span>
+            )}
+          </div>
           <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
-            Review day, week, and monthly submissions across all cohort batches with automated AI grading and feedback.
+            Review day, week, and monthly submissions across cohort batches with automated AI grading and feedback.
           </p>
         </div>
 
@@ -313,19 +384,6 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
 
         {/* Bottom: Dropdown Filters & Search */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Batch Selector */}
-          <select
-            value={selectedBatch}
-            onChange={(e) => setSelectedBatch(e.target.value)}
-            className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-300 transition cursor-pointer"
-          >
-            {batchOptions.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-
           {/* Intern Selector */}
           <select
             value={selectedIntern}
@@ -391,7 +449,7 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-sm font-black text-slate-900">{log.internName}</h4>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200/60 text-indigo-700">
-                        {log.batchName || "Full-Stack AI Engineering"}
+                        {log.batchName || students.find((s) => s.id === log.internId)?.batchName || selectedBatchProp?.name || "General Cohort"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
@@ -488,7 +546,7 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
               )}
 
               {/* ── AI AUTO-REVIEW ASSESSMENT DISPLAY ── */}
-              {log.aiReview && (
+              {log.aiReview && (log.aiReview.summary || typeof log.aiReview.rating === "number") && (
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-purple-50/40 to-blue-50/70 border border-indigo-200 text-xs space-y-2.5">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
@@ -497,25 +555,27 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
                       </div>
                       <div>
                         <span className="text-xs font-black text-indigo-950">Antigravity AI Assessment</span>
-                        <span className="text-[10px] font-medium text-slate-400 ml-2">{log.aiReview.reviewedAt}</span>
+                        <span className="text-[10px] font-medium text-slate-400 ml-2">{log.aiReview.reviewedAt || ""}</span>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-600 text-white shadow-2xs">
-                        {log.aiReview.rating.toFixed(1)} / 5.0 ⭐
+                        {typeof log.aiReview.rating === "number" ? log.aiReview.rating.toFixed(1) : "4.5"} / 5.0 ⭐
                       </span>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                          log.aiReview.velocityAssessment === "Outstanding"
-                            ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                            : log.aiReview.velocityAssessment === "Blocked"
-                            ? "bg-amber-100 text-amber-800 border border-amber-200"
-                            : "bg-blue-100 text-blue-800 border border-blue-200"
-                        }`}
-                      >
-                        {log.aiReview.velocityAssessment}
-                      </span>
+                      {log.aiReview.velocityAssessment && (
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            log.aiReview.velocityAssessment === "Outstanding"
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              : log.aiReview.velocityAssessment === "Blocked"
+                              ? "bg-amber-100 text-amber-800 border border-amber-200"
+                              : "bg-blue-100 text-blue-800 border border-blue-200"
+                          }`}
+                        >
+                          {log.aiReview.velocityAssessment}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -549,9 +609,11 @@ export const AdminDailyLogsReviewView: React.FC<AdminDailyLogsReviewViewProps> =
 
         {filteredLogs.length === 0 && (
           <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-2">
-            <p className="text-sm font-bold text-slate-700">No daily activity logs found.</p>
+            <p className="text-sm font-bold text-slate-700">
+              No daily activity logs found {activeBatchName ? `for cohort "${activeBatchName}"` : ""}.
+            </p>
             <p className="text-xs text-slate-400">
-              Try adjusting the timeframe filter or clear your search term.
+              Try adjusting the timeframe filter or clearing your search term.
             </p>
           </div>
         )}

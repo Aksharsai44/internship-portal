@@ -9,6 +9,7 @@ import {
   LeaveRequest,
   HolidayEvent,
   AppNotification,
+  isDemoStudent,
 } from "../types";
 import {
   Clock,
@@ -85,8 +86,9 @@ export const InternAttendanceView: React.FC<InternAttendanceViewProps> = ({
     shiftPatterns.find((s) => s.id === studentAssignment?.shiftId) || shiftPatterns[0];
 
   // Intern's punch logs (filtered for this student)
+  const isDemo = isDemoStudent(currentStudent);
   const studentPunchLogs = punchLogs.filter(
-    (p) => !p.internId || p.internId === currentStudent.id
+    (p) => p.internId === currentStudent.id || (isDemo && !p.internId)
   );
 
   // Determine current punch status
@@ -333,18 +335,19 @@ export const InternAttendanceView: React.FC<InternAttendanceViewProps> = ({
       return { status: "on_leave", leaveRequest: approvedLeave };
     }
 
-    // 3. Check recorded attendance (match by internId or internName or general)
+    // 3. Check recorded attendance (match strictly by internId or internName)
     const rec = attendanceRecords.find(
       (a) =>
         a.date === dateStr &&
-        (!a.internId ||
-          a.internId === currentStudent.id ||
+        (a.internId === currentStudent.id ||
           (a.internName && currentStudent.name && a.internName.toLowerCase().trim() === currentStudent.name.toLowerCase().trim()))
     );
     if (rec) return { status: rec.status, record: rec };
 
-    // 4. Today (Sep 6, 2026)
-    if (dayNum === 6 && selectedMonth === 8 && selectedYear === 2026) {
+    // 4. Today Check
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}`;
+    if (dateStr === todayStr) {
       if (isClockedIn) {
         return { status: "present" };
       }
@@ -362,12 +365,21 @@ export const InternAttendanceView: React.FC<InternAttendanceViewProps> = ({
       return { status: "week_off" };
     }
 
-    // 6. If date is in the past (before Sep 6) and no record -> absent
-    if (dayNum < 6 && selectedMonth === 8 && selectedYear === 2026) {
+    // 6. Check enrollment date
+    const studentStartDate = currentStudent.internshipStartDate || currentStudent.enrolledAt;
+    if (studentStartDate) {
+      const enrollmentDateStr = studentStartDate.split("T")[0];
+      if (dateStr < enrollmentDateStr) {
+        return { status: "scheduled" };
+      }
+    }
+
+    // 7. If date is in the past (before today) and no record -> absent
+    if (dateStr < todayStr) {
       return { status: "absent" };
     }
 
-    // 7. Otherwise (future scheduled workday) -> scheduled (neutral, NOT green present!)
+    // 8. Otherwise (future scheduled workday) -> scheduled
     return { status: "scheduled" };
   };
 

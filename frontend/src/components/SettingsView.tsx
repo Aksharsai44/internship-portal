@@ -82,6 +82,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const isDirtyPasswordRef = useRef<boolean>(false);
   const [passwordSaved, setPasswordSaved] = useState<boolean>(false);
 
+  // Gemini AI API Key State
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(settings.geminiApiKey || "");
+  const [showGeminiKey, setShowGeminiKey] = useState<boolean>(false);
+  const [apiKeySaved, setApiKeySaved] = useState<boolean>(false);
+
   // Add / Edit Admin Modal State
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [editingAdminId, setEditingAdminId] = useState<string | null>(null);
@@ -247,11 +252,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           enableTelemetryAnalytics: backendSettings.enableTelemetryAnalytics ?? true,
           enableClientPortal: backendSettings.enableClientPortal ?? true,
           apiKeySet: true,
+          geminiApiKey: backendSettings.geminiApiKey || "",
           defaultStudentPassword: backendSettings.defaultStudentPassword || "intern123",
           adminUsers: localSettings.adminUsers,
         };
         setLocalSettings(merged);
         onUpdateSettings(merged);
+        if (backendSettings.geminiApiKey !== undefined) {
+          setGeminiApiKeyInput(backendSettings.geminiApiKey || "");
+        }
         if (!isPasswordFocusedRef.current && !isDirtyPasswordRef.current) {
           setStudentPasswordInput(backendSettings.defaultStudentPassword || "student123");
         }
@@ -268,6 +277,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       );
     } catch (err) {
       console.warn("Using local settings state:", err);
+    }
+  };
+
+  const handleSaveGeminiApiKey = async () => {
+    const updated = {
+      ...localSettings,
+      geminiApiKey: geminiApiKeyInput.trim(),
+    };
+    setLocalSettings(updated);
+    onUpdateSettings(updated);
+    try {
+      await axios.post("/api/settings/", {
+        id: "global",
+        ...updated,
+      });
+      setApiKeySaved(true);
+      setTimeout(() => setApiKeySaved(false), 2000);
+    } catch (err) {
+      console.warn("Could not save Gemini API Key to backend:", err);
     }
   };
 
@@ -799,6 +827,71 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             >
               {passwordSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
               <span>Save Password</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* 1.5 GOOGLE GEMINI AI API KEY CONFIGURATION                */}
+      {/* ========================================================= */}
+      <div className="bg-gradient-to-br from-white via-indigo-50/20 to-sky-50/30 rounded-3xl border border-indigo-100 shadow-sm p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-indigo-100/60">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-600" />
+              <h3 className="font-extrabold text-slate-900 text-base">
+                Google Gemini AI Engine & API Key
+              </h3>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                geminiApiKeyInput ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+              }`}>
+                {geminiApiKeyInput ? "AI Key Configured" : "Default Built-In AI"}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Power Universal AI Profile Analyzers, automated rubric evaluations, ATS resume parsing, and standup sentiment analysis.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+          <div className="flex-1 max-w-xl">
+            <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider block mb-1.5">
+              Gemini API Key (Google AI Studio)
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-indigo-400">
+                <Key className="w-4 h-4" />
+              </div>
+              <input
+                type={showGeminiKey ? "text" : "password"}
+                value={geminiApiKeyInput}
+                onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full pl-9 pr-10 py-2.5 text-xs font-mono font-bold text-slate-800 rounded-xl border border-indigo-200 bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs"
+              />
+              <button
+                type="button"
+                onClick={() => setShowGeminiKey(!showGeminiKey)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Leave blank to use the system default AI key, or paste your own Google Gemini API key to run evaluations without rate limits.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={handleSaveGeminiApiKey}
+              className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-700 hover:to-sky-700 text-white rounded-xl text-xs font-black transition shadow-sm cursor-pointer flex items-center gap-2"
+            >
+              {apiKeySaved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              <span>{apiKeySaved ? "Saved to Database" : "Save API Key"}</span>
             </button>
           </div>
         </div>

@@ -33,6 +33,10 @@ export interface Student {
   branch?: string;
   city?: string;
   state?: string;
+  year?: string;
+  phoneNumber?: string;
+  portfolioUrl?: string;
+  isDemo?: boolean;
   password?: string;
   enrolledAt: string;
   status: "active" | "completed" | "inactive";
@@ -55,6 +59,7 @@ export interface Student {
   githubUrl?: string;
   linkedinUrl?: string;
   resumeUrl?: string;
+  resumeData?: InternResumeData;
   mentor?: string;
   internshipStartDate?: string;
   internshipEndDate?: string;
@@ -476,6 +481,7 @@ export interface AppSettings {
   enableTelemetryAnalytics?: boolean;
   enableClientPortal?: boolean;
   apiKeySet: boolean;
+  geminiApiKey?: string;
   defaultStudentPassword?: string;
   defaultClientPassword?: string;
   adminUsers: AdminUser[];
@@ -704,3 +710,9 @@ export interface AppNotification {
   isRead: boolean;
   actionTab?: string;
 }
+
+export const isDemoStudent = (_student?: Student | null): boolean => {
+  // All students use real data from the backend
+  return false;
+};
+

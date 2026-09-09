@@ -3,6 +3,7 @@ import {
   Student,
   InternResumeData,
   ResumeBulletFix,
+  isDemoStudent,
 } from "../types";
 import {
   Sparkles,
@@ -58,19 +59,24 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
   // Sync state if student changes
   const effectiveResume = useMemo(() => {
     const studentName = currentStudent?.name || resumeData.internName || "Candidate";
+    const isDemo = isDemoStudent(currentStudent);
     const cleanFileName = `${studentName.replace(/\s+/g, "_")}_Resume.pdf`;
     return {
       ...resumeData,
       internName: studentName,
-      email: currentStudent?.email || resumeData.email || `${studentName.toLowerCase().replace(/\s+/g, ".")}@mind2i.edu`,
-      mobile: currentStudent?.mobile || resumeData.mobile || "+91 98765 43210",
-      location: currentStudent?.city ? `${currentStudent.city}, ${currentStudent.state || ""}` : (currentStudent?.college || resumeData.location),
-      githubUrl: currentStudent?.githubUrl || (resumeData.githubUrl && !resumeData.githubUrl.includes("aksharsai") && !resumeData.githubUrl.includes("candidate") ? resumeData.githubUrl : `github.com/${studentName.toLowerCase().replace(/\s+/g, "")}`),
-      linkedinUrl: currentStudent?.linkedinUrl || (resumeData.linkedinUrl && !resumeData.linkedinUrl.includes("aksharsai") && !resumeData.linkedinUrl.includes("candidate") ? resumeData.linkedinUrl : `linkedin.com/in/${studentName.toLowerCase().replace(/\s+/g, "")}`),
+      email: currentStudent?.email || resumeData.email || (isDemo ? `${studentName.toLowerCase().replace(/\s+/g, ".")}@mind2i.edu` : ""),
+      mobile: currentStudent?.mobile || resumeData.mobile || (isDemo ? "+91 98765 43210" : ""),
+      location: currentStudent?.city ? `${currentStudent.city}, ${currentStudent.state || ""}` : (currentStudent?.college || resumeData.location || ""),
+      githubUrl: currentStudent?.githubUrl || (resumeData.githubUrl && !resumeData.githubUrl.includes("aksharsai") && !resumeData.githubUrl.includes("candidate") ? resumeData.githubUrl : (isDemo ? `github.com/${studentName.toLowerCase().replace(/\s+/g, "")}` : "")),
+      linkedinUrl: currentStudent?.linkedinUrl || (resumeData.linkedinUrl && !resumeData.linkedinUrl.includes("aksharsai") && !resumeData.linkedinUrl.includes("candidate") ? resumeData.linkedinUrl : (isDemo ? `linkedin.com/in/${studentName.toLowerCase().replace(/\s+/g, "")}` : "")),
       scorecard: {
         ...resumeData.scorecard,
-        lastScannedFileName: cleanFileName,
-        executiveSummary: `Analysis of ${studentName}'s resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements position ${studentName} in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.`,
+        lastScannedFileName: resumeData.scorecard?.lastScannedFileName && resumeData.scorecard.lastScannedFileName !== "None" ? resumeData.scorecard.lastScannedFileName : (isDemo ? cleanFileName : "None"),
+        executiveSummary: resumeData.scorecard?.executiveSummary && !resumeData.scorecard.executiveSummary.includes("No resume document uploaded yet")
+          ? resumeData.scorecard.executiveSummary
+          : (isDemo
+              ? `Analysis of ${studentName}'s resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements position ${studentName} in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.`
+              : (resumeData.scorecard?.executiveSummary || "No resume document uploaded yet. Upload a PDF or Word document in Resume Builder to generate real-time ATS analysis.")),
       },
     };
   }, [resumeData, currentStudent]);

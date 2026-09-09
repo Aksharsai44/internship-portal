@@ -105,7 +105,7 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
       if (
         selectedBatch?.id &&
         selectedBatch.id !== "all" &&
-        p.batchId !== "all" &&
+        p.batchId &&
         p.batchId !== selectedBatch.id
       ) {
         return false;

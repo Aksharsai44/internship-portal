@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Batch, Student, ClientUser, InterviewRequest } from "../types";
 import {
   Calendar,
@@ -17,6 +17,8 @@ import {
   User,
   AlertCircle,
   Send,
+  Search,
+  GraduationCap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import axios from "axios";
@@ -28,6 +30,7 @@ interface InterviewRequestsViewProps {
   interviewRequests: InterviewRequest[];
   students: Student[];
   batches: Batch[];
+  selectedBatch?: Batch;
   onUpdateRequests: (requests: InterviewRequest[]) => void;
 }
 
@@ -38,15 +41,82 @@ export function InterviewRequestsView({
   interviewRequests,
   students,
   batches,
+  selectedBatch,
   onUpdateRequests,
 }: InterviewRequestsViewProps) {
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [filterBatch, setFilterBatch] = useState<string>("all");
+  const [filterBatch, setFilterBatch] = useState<string>(() => {
+    if (selectedBatch && selectedBatch.id && selectedBatch.id !== "all") {
+      return selectedBatch.id;
+    }
+    return "all";
+  });
+  const [searchQuery, setSearchQuery] = useState("");
   const [scheduleModal, setScheduleModal] = useState<InterviewRequest | null>(null);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleLink, setScheduleLink] = useState("");
   const [scheduleType, setScheduleType] = useState<"virtual" | "in_person" | "phone">("virtual");
   const [adminNote, setAdminNote] = useState("");
+
+  // Sync filterBatch when global selectedBatch changes
+  useEffect(() => {
+    if (selectedBatch && selectedBatch.id && selectedBatch.id !== "all") {
+      setFilterBatch(selectedBatch.id);
+    }
+  }, [selectedBatch?.id]);
+
+  // Available Batch Options
+  const batchOptions = useMemo(() => {
+    const list: { id: string; name: string }[] = [{ id: "all", name: "All Batches" }];
+    const seen = new Set<string>();
+
+    batches.forEach((b) => {
+      if (b.id && !seen.has(b.id)) {
+        seen.add(b.id);
+        list.push({ id: b.id, name: b.name });
+      }
+    });
+
+    interviewRequests.forEach((r) => {
+      if (r.batchId && !seen.has(r.batchId)) {
+        seen.add(r.batchId);
+        const match = batches.find((b) => b.id === r.batchId);
+        list.push({ id: r.batchId, name: match?.name || r.batchName || r.batchId });
+      }
+    });
+
+    return list;
+  }, [batches, interviewRequests]);
+
+  // Helper function to check if request matches the selected batch
+  const isReqInBatch = (req: InterviewRequest, targetBatchId: string) => {
+    if (targetBatchId === "all") return true;
+
+    // Direct batchId match
+    if (req.batchId === targetBatchId) return true;
+
+    // Find target batch object
+    const targetBatch = batches.find((b) => b.id === targetBatchId || b.name === targetBatchId);
+    if (targetBatch) {
+      if (req.batchId === targetBatch.id) return true;
+      if (req.batchName && req.batchName.toLowerCase().trim() === targetBatch.name.toLowerCase().trim()) return true;
+
+      // Intern student lookup
+      const intern = students.find(
+        (s) => s.id === req.internId || (req.internName && s.name.toLowerCase().trim() === req.internName.toLowerCase().trim())
+      );
+      if (intern) {
+        if (
+          intern.batchId === targetBatch.id ||
+          (intern.batchName && intern.batchName.toLowerCase().trim() === targetBatch.name.toLowerCase().trim())
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
 
   const filteredRequests = useMemo(() => {
     let list = [...interviewRequests];
@@ -55,24 +125,48 @@ export function InterviewRequestsView({
       list = list.filter((r) => r.clientId === clientUser.id);
     }
 
+    // Filter by Batch
+    if (filterBatch !== "all") {
+      list = list.filter((r) => isReqInBatch(r, filterBatch));
+    }
+
+    // Filter by Status
     if (filterStatus !== "all") {
       list = list.filter((r) => r.status === filterStatus);
     }
 
-    if (filterBatch !== "all") {
-      list = list.filter((r) => r.batchId === filterBatch);
+    // Filter by Search Query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((r) => {
+        const intern = students.find((s) => s.id === r.internId);
+        const client = clients.find((c) => c.id === r.clientId);
+        const batch = batches.find((b) => b.id === r.batchId);
+        return (
+          (r.internName || intern?.name || "").toLowerCase().includes(q) ||
+          (r.clientName || client?.companyName || "").toLowerCase().includes(q) ||
+          (r.batchName || batch?.name || "").toLowerCase().includes(q) ||
+          (r.notes || "").toLowerCase().includes(q) ||
+          (r.adminNotes || "").toLowerCase().includes(q)
+        );
+      });
     }
 
     return list.sort((a, b) => {
       const order = { pending: 0, approved: 1, scheduled: 2, completed: 3, rejected: 4 };
       return (order[a.status] || 5) - (order[b.status] || 5);
     });
-  }, [interviewRequests, userRole, clientUser, filterStatus, filterBatch]);
+  }, [interviewRequests, userRole, clientUser, filterStatus, filterBatch, searchQuery, batches, students, clients]);
 
   const statusCounts = useMemo(() => {
-    const base = userRole === "client" && clientUser
+    let base = userRole === "client" && clientUser
       ? interviewRequests.filter((r) => r.clientId === clientUser.id)
       : interviewRequests;
+
+    if (filterBatch !== "all") {
+      base = base.filter((r) => isReqInBatch(r, filterBatch));
+    }
+
     return {
       all: base.length,
       pending: base.filter((r) => r.status === "pending").length,
@@ -81,7 +175,7 @@ export function InterviewRequestsView({
       completed: base.filter((r) => r.status === "completed").length,
       rejected: base.filter((r) => r.status === "rejected").length,
     };
-  }, [interviewRequests, userRole, clientUser]);
+  }, [interviewRequests, userRole, clientUser, filterBatch, batches, students]);
 
   const handleAction = async (requestId: string, action: "approve" | "reject" | "complete") => {
     try {
@@ -142,42 +236,110 @@ export function InterviewRequestsView({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-          <Calendar className="w-6 h-6 text-violet-500" />
-          Interview Requests
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          {userRole === "admin" ? "Manage all interview requests from clients" : "Track your interview requests"}
-        </p>
+      {/* Header & Batch Dropdown Controls */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+              <Calendar className="w-6 h-6 text-violet-500" />
+              Interview Requests
+            </h1>
+            {filterBatch !== "all" && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-violet-600 animate-pulse"></span>
+                Filtered Cohort: {batchOptions.find((b) => b.id === filterBatch)?.name || filterBatch}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-500 mt-1">
+            {userRole === "admin" ? "Manage all interview requests from clients" : "Track your interview requests"}
+          </p>
+        </div>
+
+        {/* Batch Dropdown & Search Controls */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Batch Selector Dropdown */}
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-3.5 py-1.5 shadow-xs hover:border-slate-300 transition">
+            <GraduationCap className="w-4 h-4 text-violet-500 flex-shrink-0" />
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Select Batch</span>
+              <select
+                value={filterBatch}
+                onChange={(e) => setFilterBatch(e.target.value)}
+                className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer pr-3"
+              >
+                {batchOptions.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative flex-1 sm:w-60">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search candidate, client..."
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-2xl text-xs font-medium text-slate-800 placeholder-slate-400 outline-none focus:ring-2 focus:ring-violet-300 shadow-xs transition"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Status Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {["all", "pending", "approved", "scheduled", "completed", "rejected"].map((s) => (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {["all", "pending", "approved", "scheduled", "completed", "rejected"].map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                filterStatus === s
+                  ? "bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md"
+                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+              }`}
+            >
+              <span className="capitalize">{s}</span>
+              <span className="ml-1.5 opacity-70">({statusCounts[s as keyof typeof statusCounts] || 0})</span>
+            </button>
+          ))}
+        </div>
+
+        {filterBatch !== "all" && (
           <button
-            key={s}
-            onClick={() => setFilterStatus(s)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterStatus === s
-                ? "bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md"
-                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-            }`}
+            onClick={() => setFilterBatch("all")}
+            className="text-xs font-bold text-violet-600 hover:text-violet-800 underline cursor-pointer"
           >
-            <span className="capitalize">{s}</span>
-            <span className="ml-1.5 opacity-70">({statusCounts[s as keyof typeof statusCounts] || 0})</span>
+            Clear Batch Filter (Show All)
           </button>
-        ))}
+        )}
       </div>
 
       {/* Requests List */}
       {filteredRequests.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 p-16 text-center">
           <Calendar className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-          <h3 className="text-lg font-black text-slate-500">No interview requests</h3>
+          <h3 className="text-lg font-black text-slate-500">
+            No interview requests {filterBatch !== "all" ? `found for ${batchOptions.find((b) => b.id === filterBatch)?.name || "this batch"}` : ""}
+          </h3>
           <p className="text-sm text-slate-400 mt-1">
-            {userRole === "client" ? "Browse the leaderboard to request interviews with interns" : "No requests from clients yet"}
+            {filterBatch !== "all" ? (
+              <button
+                onClick={() => setFilterBatch("all")}
+                className="text-violet-600 hover:text-violet-800 font-bold underline cursor-pointer"
+              >
+                View all batches
+              </button>
+            ) : userRole === "client" ? (
+              "Browse the leaderboard to request interviews with interns"
+            ) : (
+              "No requests from clients yet"
+            )}
           </p>
         </div>
       ) : (

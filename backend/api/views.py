@@ -7,11 +7,14 @@ from .models import (
     Batch, Student, Score, LearnHubModule, LearnHubStudentProgress,
     LiveQuestion, LiveQAResponse, Assignment, AssignmentSubmission,
     CertificateTemplate, AdminUser, AppSettingsModel, ScheduledMeeting,
-    ClientUser, InterviewRequest
+    ClientUser, InterviewRequest,
+    InternEvaluationRound, BatchEvaluationRound, ProjectAssignment, ProjectSubmission,
+    ShiftPattern, InternRosterAssignment, AttendanceRecord, PunchLogEntry,
+    LeaveRequest, HolidayEvent, DailyActivityLog, AppNotification, InternResource
 )
 import os
 import time
-from datetime import datetime
+from datetime import datetime, date
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .serializers import (
@@ -19,7 +22,13 @@ from .serializers import (
     LearnHubStudentProgressSerializer, LiveQuestionSerializer, LiveQAResponseSerializer,
     AssignmentSerializer, AssignmentSubmissionSerializer, CertificateTemplateSerializer,
     AdminUserSerializer, AppSettingsSerializer, ScheduledMeetingSerializer,
-    ClientUserSerializer, InterviewRequestSerializer
+    ClientUserSerializer, InterviewRequestSerializer,
+    InternEvaluationRoundSerializer, BatchEvaluationRoundSerializer,
+    ProjectAssignmentSerializer, ProjectSubmissionSerializer,
+    ShiftPatternSerializer, InternRosterAssignmentSerializer,
+    AttendanceRecordSerializer, PunchLogEntrySerializer,
+    LeaveRequestSerializer, HolidayEventSerializer,
+    DailyActivityLogSerializer, AppNotificationSerializer, InternResourceSerializer
 )
 
 class BatchViewSet(viewsets.ModelViewSet):
@@ -635,3 +644,418 @@ class ScheduledMeetingViewSet(viewsets.ModelViewSet):
         meeting.save()
         serializer = self.get_serializer(meeting)
         return Response(serializer.data)
+
+
+class InternEvaluationRoundViewSet(viewsets.ModelViewSet):
+    queryset = InternEvaluationRound.objects.all().order_by('-updatedAt')
+    serializer_class = InternEvaluationRoundSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        student_id = self.request.query_params.get('student') or self.request.query_params.get('studentId')
+        batch_id = self.request.query_params.get('batch') or self.request.query_params.get('batchId')
+        round_name = self.request.query_params.get('round') or self.request.query_params.get('roundName')
+
+        if student_id:
+            queryset = queryset.filter(student_id=student_id)
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batch_id=batch_id)
+        if round_name and round_name != 'all':
+            queryset = queryset.filter(roundName=round_name)
+        return queryset
+
+    @action(detail=False, methods=['post'])
+    def bulk_sync(self, request):
+        """
+        Sync multiEvaluationsMap from frontend into database.
+        Accepts dict { [studentId]: InternEvaluation[] }
+        """
+        data = request.data
+        if not isinstance(data, dict):
+            return Response({"error": "Expected an object mapping studentId to evaluations array"}, status=400)
+
+        saved_count = 0
+        for stu_id, evals_list in data.items():
+            if not isinstance(evals_list, list) or len(evals_list) == 0:
+                continue
+            student_obj = Student.objects.filter(id=stu_id).first()
+            if not student_obj:
+                continue
+
+            # Group evaluations by roundName
+            rounds_map = {}
+            for ev in evals_list:
+                r_name = ev.get('roundName') or ev.get('evaluationName') or "System Architecture & System Defense"
+                if r_name not in rounds_map:
+                    rounds_map[r_name] = []
+                rounds_map[r_name].append(ev)
+
+            for r_name, round_evals in rounds_map.items():
+                # Compute average score across reviews in this round
+                scores = []
+                for re in round_evals:
+                    c = re.get('communicationScore', 0)
+                    g = re.get('grammarScore', 0)
+                    f = re.get('fluencyScore', 0)
+                    p = re.get('projectScore', 0)
+                    avg = (c + g + f + p) / 4.0 if (c or g or f or p) else 0
+                    scores.append(avg)
+                consensus = round(sum(scores) / len(scores), 1) if scores else 0.0
+
+                round_id = f"eval_{stu_id}_{abs(hash(r_name)) % 1000000}"
+                InternEvaluationRound.objects.update_or_create(
+                    student=student_obj,
+                    roundName=r_name,
+                    defaults={
+                        'id': round_id,
+                        'batch': student_obj.batch,
+                        'evaluationsData': round_evals,
+                        'consensusScore': consensus,
+                    }
+                )
+                saved_count += 1
+
+        return Response({"status": "synced", "savedRounds": saved_count})
+
+
+class BatchEvaluationRoundViewSet(viewsets.ModelViewSet):
+    queryset = BatchEvaluationRound.objects.all().order_by('createdAt')
+    serializer_class = BatchEvaluationRoundSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        batch_id = self.request.query_params.get('batch') or self.request.query_params.get('batchId')
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batch_id=batch_id)
+        return queryset
+
+
+class ProjectAssignmentViewSet(viewsets.ModelViewSet):
+    queryset = ProjectAssignment.objects.all().order_by('-createdAt')
+    serializer_class = ProjectAssignmentSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        batch_id = self.request.query_params.get('batch') or self.request.query_params.get('batchId')
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batch_id=batch_id)
+        return queryset
+
+
+class ProjectSubmissionViewSet(viewsets.ModelViewSet):
+    queryset = ProjectSubmission.objects.all().order_by('-updatedAt')
+    serializer_class = ProjectSubmissionSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        project_id = self.request.query_params.get('projectId')
+        student_id = self.request.query_params.get('studentId')
+        batch_id = self.request.query_params.get('batchId')
+        if project_id:
+            queryset = queryset.filter(projectId=project_id)
+        if student_id:
+            queryset = queryset.filter(student_id=student_id)
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batchId=batch_id)
+        return queryset
+
+
+class ShiftPatternViewSet(viewsets.ModelViewSet):
+    queryset = ShiftPattern.objects.all().order_by('id')
+    serializer_class = ShiftPatternSerializer
+
+    @action(detail=False, methods=['post'])
+    def bulk_sync(self, request):
+        items = request.data.get('items', [])
+        saved = 0
+        for item in items:
+            s_id = item.get('id')
+            if not s_id:
+                continue
+            name = item.get('name', 'Shift')
+            code = item.get('code') or item.get('type') or 'general'
+            start_time = item.get('startTime') or item.get('start_time') or '09:00'
+            end_time = item.get('endTime') or item.get('end_time') or '17:00'
+            color = item.get('color', 'blue')
+            desc = item.get('description', '')
+            req_hours = item.get('requiredHours') or item.get('fullDayHours') or item.get('required_hours') or 8.0
+            is_def = item.get('isDefault') or item.get('isActive') or False
+
+            ShiftPattern.objects.update_or_create(
+                id=s_id,
+                defaults={
+                    'name': name,
+                    'code': code,
+                    'startTime': start_time,
+                    'endTime': end_time,
+                    'color': color,
+                    'description': desc,
+                    'requiredHours': float(req_hours),
+                    'isDefault': bool(is_def),
+                }
+            )
+            saved += 1
+        return Response({"status": "synced", "count": saved})
+
+
+class InternRosterAssignmentViewSet(viewsets.ModelViewSet):
+    queryset = InternRosterAssignment.objects.all().order_by('internName')
+    serializer_class = InternRosterAssignmentSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        batch_id = self.request.query_params.get('batchId')
+        intern_id = self.request.query_params.get('internId')
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batchId=batch_id)
+        if intern_id:
+            queryset = queryset.filter(internId=intern_id)
+        return queryset
+
+    @action(detail=False, methods=['post'])
+    def bulk_sync(self, request):
+        items = request.data.get('items', [])
+        saved = 0
+        for item in items:
+            intern_id = item.get('internId')
+            if not intern_id:
+                continue
+            InternRosterAssignment.objects.update_or_create(
+                internId=intern_id,
+                defaults=item
+            )
+            saved += 1
+        return Response({"status": "synced", "count": saved})
+
+
+class AttendanceRecordViewSet(viewsets.ModelViewSet):
+    queryset = AttendanceRecord.objects.all().order_by('-date')
+    serializer_class = AttendanceRecordSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        batch_id = self.request.query_params.get('batchId')
+        intern_id = self.request.query_params.get('internId')
+        date_val = self.request.query_params.get('date')
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batchId=batch_id)
+        if intern_id:
+            queryset = queryset.filter(internId=intern_id)
+        if date_val:
+            queryset = queryset.filter(date=date_val)
+        return queryset
+
+    @action(detail=False, methods=['post'])
+    def bulk_create_or_update(self, request):
+        records = request.data.get('records', []) or request.data.get('items', [])
+        saved = 0
+        for r in records:
+            r_id = r.get('id') or f"att_{int(time.time()*1000)}_{saved}"
+            intern_id = r.get('internId') or r.get('studentId') or ''
+            intern_name = r.get('internName') or r.get('studentName') or ''
+            date_val = r.get('date', '')
+            status_val = r.get('status', 'present')
+            clock_in = r.get('clockInTime') or r.get('punchIn') or ''
+            clock_out = r.get('clockOutTime') or r.get('punchOut') or ''
+            hours_worked = r.get('hoursWorked') or r.get('totalHours') or 0.0
+            req_hours = r.get('requiredHours', 8.0)
+            shift_id = r.get('shiftId', '')
+            shift_name = r.get('shiftName', '')
+            is_late = r.get('isLate', False)
+            notes = r.get('notes', '')
+
+            AttendanceRecord.objects.update_or_create(
+                id=r_id,
+                defaults={
+                    'internId': intern_id,
+                    'internName': intern_name,
+                    'date': date_val,
+                    'status': status_val,
+                    'clockInTime': clock_in,
+                    'clockOutTime': clock_out,
+                    'hoursWorked': float(hours_worked),
+                    'requiredHours': float(req_hours),
+                    'shiftId': shift_id,
+                    'shiftName': shift_name,
+                    'isLate': bool(is_late),
+                    'notes': notes,
+                }
+            )
+            saved += 1
+        return Response({"status": "saved", "count": saved})
+
+
+class PunchLogEntryViewSet(viewsets.ModelViewSet):
+    queryset = PunchLogEntry.objects.all().order_by('-timestamp')
+    serializer_class = PunchLogEntrySerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        intern_id = self.request.query_params.get('internId')
+        date_val = self.request.query_params.get('date')
+        if intern_id:
+            queryset = queryset.filter(internId=intern_id)
+        if date_val:
+            queryset = queryset.filter(date=date_val)
+        return queryset
+
+
+class LeaveRequestViewSet(viewsets.ModelViewSet):
+    queryset = LeaveRequest.objects.all().order_by('-appliedAt')
+    serializer_class = LeaveRequestSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        batch_id = self.request.query_params.get('batchId')
+        intern_id = self.request.query_params.get('internId')
+        status_val = self.request.query_params.get('status')
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batchId=batch_id)
+        if intern_id:
+            queryset = queryset.filter(internId=intern_id)
+        if status_val:
+            queryset = queryset.filter(status=status_val)
+        return queryset
+
+
+class HolidayEventViewSet(viewsets.ModelViewSet):
+    queryset = HolidayEvent.objects.all().order_by('date')
+    serializer_class = HolidayEventSerializer
+
+    @action(detail=False, methods=['post'])
+    def bulk_sync(self, request):
+        items = request.data.get('items', [])
+        saved = 0
+        for item in items:
+            h_id = item.get('id') or f"hol_{int(time.time()*1000)}_{saved}"
+            HolidayEvent.objects.update_or_create(
+                id=h_id,
+                defaults=item
+            )
+            saved += 1
+        return Response({"status": "synced", "count": saved})
+
+
+class DailyActivityLogViewSet(viewsets.ModelViewSet):
+    queryset = DailyActivityLog.objects.all().order_by('-createdAt')
+    serializer_class = DailyActivityLogSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        batch_id = self.request.query_params.get('batchId')
+        intern_id = self.request.query_params.get('internId')
+        date_val = self.request.query_params.get('date')
+        status_val = self.request.query_params.get('status')
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batchId=batch_id)
+        if intern_id:
+            queryset = queryset.filter(internId=intern_id)
+        if date_val:
+            queryset = queryset.filter(date=date_val)
+        if status_val:
+            queryset = queryset.filter(status=status_val)
+        return queryset
+
+    @action(detail=False, methods=['post'])
+    def bulk_sync(self, request):
+        items = request.data.get('items', [])
+        saved = 0
+        for item in items:
+            log_id = item.get('id') or f"log_{int(time.time()*1000)}_{saved}"
+            intern_id = item.get('internId') or item.get('studentId') or ''
+            intern_name = item.get('internName') or item.get('studentName') or ''
+            batch_id = item.get('batchId') or item.get('batch') or ''
+            batch_name = item.get('batchName', '')
+            log_type = item.get('logType', 'Daily Achievement')
+            desc = item.get('description') or item.get('tasksCompleted') or ''
+            date_val = item.get('date') or str(date.today())
+            created_at = item.get('createdAt') or str(datetime.now())
+            has_blockers = item.get('hasBlockers') or bool(item.get('currentBlockers') and item.get('currentBlockers').lower() != 'none')
+            blocker_desc = item.get('blockerDescription') or item.get('currentBlockers') or ''
+            status_val = item.get('status', 'pending')
+            feedback = item.get('adminFeedback', '')
+            rating = item.get('adminRating')
+            reviewer = item.get('adminReviewerName') or item.get('reviewedBy') or ''
+            ai_rev = item.get('aiReview') or {}
+
+            DailyActivityLog.objects.update_or_create(
+                id=log_id,
+                defaults={
+                    'internId': intern_id,
+                    'internName': intern_name,
+                    'batchId': batch_id,
+                    'batchName': batch_name,
+                    'logType': log_type,
+                    'description': desc,
+                    'date': date_val,
+                    'createdAt': created_at,
+                    'hasBlockers': bool(has_blockers),
+                    'blockerDescription': blocker_desc,
+                    'status': status_val,
+                    'adminFeedback': feedback,
+                    'adminRating': float(rating) if rating is not None else None,
+                    'adminReviewerName': reviewer,
+                    'aiReview': ai_rev,
+                }
+            )
+            saved += 1
+        return Response({"status": "synced", "count": saved})
+
+
+class AppNotificationViewSet(viewsets.ModelViewSet):
+    queryset = AppNotification.objects.all().order_by('-timestamp')
+    serializer_class = AppNotificationSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        role = self.request.query_params.get('role')
+        user_id = self.request.query_params.get('userId')
+        if role:
+            queryset = queryset.filter(recipientRole__in=[role, 'all'])
+        if user_id:
+            queryset = queryset.filter(recipientId__in=[user_id, ''])
+        return queryset
+
+    @action(detail=True, methods=['patch', 'post'])
+    def mark_read(self, request, pk=None):
+        notif = self.get_object()
+        notif.isRead = True
+        notif.save()
+        return Response({"status": "marked_read"})
+
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        role = request.data.get('role')
+        qs = self.get_queryset()
+        if role:
+            qs = qs.filter(recipientRole__in=[role, 'all'])
+        qs.update(isRead=True)
+        return Response({"status": "all_marked_read"})
+
+    @action(detail=False, methods=['post'])
+    def clear_all(self, request):
+        role = request.data.get('role')
+        user_id = request.data.get('userId')
+        qs = self.get_queryset()
+        if role:
+            qs = qs.filter(recipientRole__in=[role, 'all'])
+        if user_id:
+            qs = qs.filter(recipientId__in=[user_id, ''])
+        qs.delete()
+        return Response({"status": "cleared"})
+
+
+class InternResourceViewSet(viewsets.ModelViewSet):
+    queryset = InternResource.objects.all().order_by('-uploadedAt')
+    serializer_class = InternResourceSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        student_id = self.request.query_params.get('studentId') or self.request.query_params.get('student')
+        batch_id = self.request.query_params.get('batchId') or self.request.query_params.get('batch')
+        if student_id:
+            queryset = queryset.filter(studentId=student_id)
+        if batch_id and batch_id != 'all':
+            queryset = queryset.filter(batchId=batch_id)
+        return queryset
+

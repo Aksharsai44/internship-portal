@@ -33,53 +33,7 @@ interface InternResourcesVaultViewProps {
   onNavigateToReport?: () => void;
 }
 
-export const DEFAULT_SAMPLE_RESOURCES = (studentId: string, batchId?: string): InternResource[] => [
-  {
-    id: `res-${studentId}-1`,
-    studentId,
-    batchId: batchId || "BATCH-2025-A",
-    title: "Mind2i AI Platform: Distributed Microservices Architecture Blueprint",
-    type: "blueprint",
-    fileUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    fileName: "Mind2i_Microservices_Architecture_Blueprint.pdf",
-    fileSize: "4.2 MB",
-    uploadedAt: "Sep 04, 2026",
-    description: "End-to-end system topology covering Redis pub/sub queue, FastAPI inference microservice, PostgreSQL partitioning, and Docker Swarm deployments.",
-    aiRating: 96,
-    aiAuditSummary: "Exemplary architectural rigor. Verified decoupled boundaries, clean circuit breaker definitions, and robust fault-tolerant retry protocols.",
-    tags: ["System Architecture", "Microservices", "Docker", "FastAPI"]
-  },
-  {
-    id: `res-${studentId}-2`,
-    studentId,
-    batchId: batchId || "BATCH-2025-A",
-    title: "Capstone Project Executive Presentation & Technical Defense Deck",
-    type: "presentation",
-    fileUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    fileName: "Executive_Capstone_Presentation_Deck.pdf",
-    fileSize: "6.8 MB",
-    uploadedAt: "Sep 06, 2026",
-    description: "24-slide keynote summarizing business problem, machine learning pipeline, ROI impact metrics, and cloud deployment economics.",
-    aiRating: 94,
-    aiAuditSummary: "High visual polish and executive clarity. Narrative structure effectively bridges high-level stakeholder outcomes with deep algorithmic justification.",
-    tags: ["Slide Deck", "Executive Pitch", "ROI Analysis", "Machine Learning"]
-  },
-  {
-    id: `res-${studentId}-3`,
-    studentId,
-    batchId: batchId || "BATCH-2025-A",
-    title: "Benchmarking LLM Latency & Quantization on Edge Hardware Whitepaper",
-    type: "whitepaper",
-    fileUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    fileName: "Edge_LLM_Quantization_Research_Paper.pdf",
-    fileSize: "2.1 MB",
-    uploadedAt: "Sep 07, 2026",
-    description: "Empirical study analyzing 4-bit vs 8-bit quantized transformer models across ARM64 edge processors, detailing thermal dissipation and memory consumption.",
-    aiRating: 98,
-    aiAuditSummary: "Publishable research quality. Demonstrates academic rigor in benchmark setup, statistical validation of inference latency, and formal citations.",
-    tags: ["Research Paper", "Quantization", "Edge AI", "Benchmarking"]
-  }
-];
+export const DEFAULT_SAMPLE_RESOURCES = (_studentId: string, _batchId?: string): InternResource[] => [];
 
 export const InternResourcesVaultView: React.FC<InternResourcesVaultViewProps> = ({
   currentStudent,
@@ -89,14 +43,19 @@ export const InternResourcesVaultView: React.FC<InternResourcesVaultViewProps> =
   const [resources, setResources] = useState<InternResource[]>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
-      if (stored[currentStudent.id] && stored[currentStudent.id].length > 0) {
-        return stored[currentStudent.id];
+      if (stored[currentStudent.id] && Array.isArray(stored[currentStudent.id])) {
+        // Filter out any stale sample dummy pdfs
+        return stored[currentStudent.id].filter(
+          (r: InternResource) => !r.id.startsWith("res-") || !r.fileName.includes("Mind2i_")
+        );
       }
     } catch {}
     if (currentStudent?.resources && currentStudent.resources.length > 0) {
-      return currentStudent.resources;
+      return currentStudent.resources.filter(
+        (r) => !r.fileName.includes("Mind2i_Microservices_")
+      );
     }
-    return DEFAULT_SAMPLE_RESOURCES(currentStudent.id, currentStudent.batchId);
+    return [];
   });
 
   useEffect(() => {

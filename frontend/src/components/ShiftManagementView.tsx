@@ -44,6 +44,7 @@ interface ShiftManagementViewProps {
   leaveRequests?: LeaveRequest[];
   batches?: Batch[];
   students?: Student[];
+  selectedBatch?: Batch;
   onUpdateShiftPatterns: (patterns: ShiftPattern[]) => void;
   onUpdateRosterAssignments: (roster: InternRosterAssignment[]) => void;
   onUpdateHolidays: (holidays: HolidayEvent[]) => void;
@@ -63,6 +64,7 @@ export const ShiftManagementView: React.FC<ShiftManagementViewProps> = ({
   leaveRequests = INITIAL_LEAVE_REQUESTS,
   batches = [],
   students = [],
+  selectedBatch: selectedBatchProp,
   onUpdateShiftPatterns,
   onUpdateRosterAssignments,
   onUpdateHolidays,
@@ -75,7 +77,18 @@ export const ShiftManagementView: React.FC<ShiftManagementViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<"roster" | "leaves" | "holidays">("roster");
 
   // Filters & selection state
-  const [selectedBatch, setSelectedBatch] = useState("All Batches");
+  const [selectedBatch, setSelectedBatch] = useState<string>(() => {
+    if (selectedBatchProp && selectedBatchProp.name) {
+      return selectedBatchProp.name;
+    }
+    return "All Batches";
+  });
+
+  useEffect(() => {
+    if (selectedBatchProp && selectedBatchProp.name) {
+      setSelectedBatch(selectedBatchProp.name);
+    }
+  }, [selectedBatchProp?.id, selectedBatchProp?.name]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedInternIds, setSelectedInternIds] = useState<string[]>([]);
   const [localRoster, setLocalRoster] = useState<InternRosterAssignment[]>(rosterAssignments);
@@ -126,6 +139,9 @@ export const ShiftManagementView: React.FC<ShiftManagementViewProps> = ({
   // Batches filter list
   const batchOptions = useMemo(() => {
     const list: string[] = ["All Batches"];
+    if (selectedBatchProp?.name && !list.includes(selectedBatchProp.name)) {
+      list.push(selectedBatchProp.name);
+    }
     // Add batches from props
     (batches || []).forEach((b) => {
       if (b.name && !list.includes(b.name)) {
@@ -147,7 +163,7 @@ export const ShiftManagementView: React.FC<ShiftManagementViewProps> = ({
       );
     }
     return list;
-  }, [batches, localRoster]);
+  }, [batches, localRoster, selectedBatchProp]);
 
   // Filtered roster by batch and search
   const filteredRoster = localRoster.filter((r) => {

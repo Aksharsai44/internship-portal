@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { Student, Batch, InternEvaluation, InternResource, InternReflectionVideo } from "../types";
+import axios from "axios";
+import { Student, Batch, InternEvaluation, InternResource, InternReflectionVideo, isDemoStudent } from "../types";
 import { generateAIProfileEvaluation } from "../utils/aiProfileEvaluator";
 import {
   Sparkles,
@@ -51,7 +52,6 @@ import {
   BarChart3,
   Lock,
 } from "lucide-react";
-import { DEFAULT_SAMPLE_RESOURCES } from "./InternResourcesVaultView";
 
 // ─── SYSTEM ADMIN EVALUATORS (Faculty & Industry Mentors for Multi-Admin Reviews) ───
 export interface EvaluatorUser {
@@ -114,6 +114,9 @@ export const generateDefaultAdminEvaluations = (
   dailyLogs: any[] = [],
   submissions: any[] = []
 ): InternEvaluation[] => {
+  if (!isDemoStudent(student)) {
+    return [];
+  }
   const base = student.evaluation || generateAIProfileEvaluation(student, batch, undefined, dailyLogs, submissions);
 
   // In Image 1: Varshini Reddy has completed review ("Reviewed by You", Consensus: 89%),
@@ -200,6 +203,11 @@ interface AdminProfileEvaluationsViewProps {
   students: Student[];
   dailyActivityLogs?: any[];
   projectSubmissions?: any[];
+  attendanceRecords?: any[];
+  punchLogs?: any[];
+  assignments?: any[];
+  assignmentSubmissions?: any[];
+  resumeData?: any;
   onUpdateStudentEvaluation: (studentId: string, evaluation: InternEvaluation) => void;
   onUpdateStudentResources?: (studentId: string, resources: InternResource[]) => void;
   onViewStudentReport: (student: Student) => void;
@@ -213,6 +221,11 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
   students,
   dailyActivityLogs = [],
   projectSubmissions = [],
+  attendanceRecords = [],
+  punchLogs: _punchLogs = [],
+  assignments: _assignments = [],
+  assignmentSubmissions = [],
+  resumeData,
   onUpdateStudentEvaluation,
   onUpdateStudentResources,
   onViewStudentReport,
@@ -399,6 +412,141 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     }
   });
 
+  // ─── Real-Time Sync with Django PostgreSQL Backend ───
+  React.useEffect(() => {
+    let isMounted = true;
+
+    const fetchEvaluationsFromBackend = async () => {
+      try {
+        const res = await axios.get("/api/evaluations/");
+        if (!isMounted) return;
+        if (Array.isArray(res.data) && res.data.length > 0) {
+          setMultiEvaluationsMap((prevMap) => {
+            const updated = { ...prevMap };
+            let hasChanges = false;
+            res.data.forEach((roundItem: any) => {
+              const stuId = roundItem.student || roundItem.studentId;
+              if (!stuId) return;
+              const evData = roundItem.evaluationsData;
+              if (!Array.isArray(evData) || evData.length === 0) return;
+
+              if (!updated[stuId] || updated[stuId].length === 0) {
+                updated[stuId] = evData;
+                hasChanges = true;
+              } else {
+                const existingList = [...updated[stuId]];
+                evData.forEach((rev: any) => {
+                  const idx = existingList.findIndex(
+                    (e) =>
+                      (e.id && e.id === rev.id) ||
+                      (e.evaluationName === rev.evaluationName && e.reviewerName === rev.reviewerName)
+                  );
+                  if (idx === -1) {
+                    existingList.push(rev);
+                    hasChanges = true;
+                  } else {
+                    if (JSON.stringify(existingList[idx]) !== JSON.stringify(rev)) {
+                      existingList[idx] = { ...existingList[idx], ...rev };
+                      hasChanges = true;
+                    }
+                  }
+                });
+                updated[stuId] = existingList;
+              }
+            });
+
+            if (hasChanges) {
+              try {
+                localStorage.setItem("m2i_intern_multi_evaluations", JSON.stringify(updated));
+              } catch {}
+              return updated;
+            }
+            return prevMap;
+          });
+        }
+      } catch (err) {
+        console.warn("Evaluations fetch error:", err);
+      }
+    };
+
+    const fetchBatchEvaluationRounds = async () => {
+      try {
+        const res = await axios.get("/api/evaluation-rounds/");
+        if (!isMounted) return;
+        if (Array.isArray(res.data) && res.data.length > 0) {
+          const customMap: Record<string, string[]> = {};
+          const deletedMap: Record<string, string[]> = {};
+
+          res.data.forEach((r: any) => {
+            const bId = r.batch || r.batchId;
+            if (!bId) return;
+            if (r.isDeleted) {
+              if (!deletedMap[bId]) deletedMap[bId] = [];
+              if (!deletedMap[bId].includes(r.roundName)) deletedMap[bId].push(r.roundName);
+            } else {
+              if (!customMap[bId]) customMap[bId] = [];
+              if (!customMap[bId].includes(r.roundName)) customMap[bId].push(r.roundName);
+            }
+          });
+
+          if (Object.keys(customMap).length > 0) {
+            setBatchCustomRounds((prev) => {
+              const merged = { ...prev };
+              Object.entries(customMap).forEach(([bId, rList]) => {
+                merged[bId] = Array.from(new Set([...(merged[bId] || []), ...rList]));
+              });
+              try {
+                localStorage.setItem("m2i_batch_custom_rounds", JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+          }
+
+          if (Object.keys(deletedMap).length > 0) {
+            setDeletedRoundsByBatch((prev) => {
+              const merged = { ...prev };
+              Object.entries(deletedMap).forEach(([bId, rList]) => {
+                merged[bId] = Array.from(new Set([...(merged[bId] || []), ...rList]));
+              });
+              try {
+                localStorage.setItem("m2i_intern_deleted_rounds_by_batch", JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Batch rounds fetch error:", err);
+      }
+    };
+
+    fetchEvaluationsFromBackend();
+    fetchBatchEvaluationRounds();
+    const interval = setInterval(fetchEvaluationsFromBackend, 4500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Debounced auto-sync to backend whenever multiEvaluationsMap changes locally
+  const initialEvalSyncRef = React.useRef(true);
+  React.useEffect(() => {
+    if (initialEvalSyncRef.current) {
+      initialEvalSyncRef.current = false;
+      return;
+    }
+    const timeout = setTimeout(() => {
+      if (Object.keys(multiEvaluationsMap).length > 0) {
+        axios.post("/api/evaluations/bulk_sync/", multiEvaluationsMap).catch((err) => {
+          console.warn("Evaluations sync error:", err);
+        });
+      }
+    }, 700);
+    return () => clearTimeout(timeout);
+  }, [multiEvaluationsMap]);
+
   // Sync activeBatchId when selectedBatch prop updates
   React.useEffect(() => {
     if (selectedBatch?.id && selectedBatch.id !== activeBatchId) {
@@ -495,13 +643,15 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     }
 
     if (!targetEval) {
-      const defEvals = generateDefaultAdminEvaluations(student, null);
-      if (roundName === "all") {
-        targetEval = defEvals[0];
-      } else {
-        targetEval = defEvals.find(
-          (e) => e.evaluationName?.toLowerCase() === roundName.toLowerCase()
-        );
+      if (isDemoStudent(student)) {
+        const defEvals = generateDefaultAdminEvaluations(student, null);
+        if (roundName === "all") {
+          targetEval = defEvals[0];
+        } else {
+          targetEval = defEvals.find(
+            (e) => e.evaluationName?.toLowerCase() === roundName.toLowerCase()
+          );
+        }
       }
     }
 
@@ -509,7 +659,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
       const isEval = isStudentEvaluatedByAdmin(student, activeAdmin.name);
       return {
         isReviewed: isEval,
-        score: student.evaluation?.overallRating ?? student.scores?.overallAccuracy ?? 88,
+        score: isEval ? (student.evaluation?.overallRating ?? student.scores?.overallAccuracy ?? 0) : (isDemoStudent(student) ? 88 : 0),
         evalItem: targetEval,
       };
     }
@@ -520,7 +670,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
       isReviewed,
       score: isReviewed
         ? targetEval!.overallRating
-        : student.evaluation?.overallRating ?? student.scores?.overallAccuracy ?? 88,
+        : (isDemoStudent(student) ? (student.evaluation?.overallRating ?? student.scores?.overallAccuracy ?? 88) : 0),
       evalItem: targetEval,
     };
   };
@@ -534,6 +684,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
         return (rName.includes(aName) || aName.includes(rName)) && (r.overallRating || 0) > 0;
       });
     }
+    if (!isDemoStudent(student)) return false;
     const defEvals = generateDefaultAdminEvaluations(student, null);
     return defEvals.some((r) => {
       const rName = (r.reviewerName || "").toLowerCase();
@@ -636,11 +787,16 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Get current student's admin evaluations (or seed default faculty evaluations)
   const currentEvaluations: InternEvaluation[] = useMemo(() => {
     if (!currentStudent) return [];
     if (multiEvaluationsMap[currentStudent.id] && multiEvaluationsMap[currentStudent.id].length > 0) {
       return multiEvaluationsMap[currentStudent.id];
+    }
+    if (currentStudent.evaluations && currentStudent.evaluations.length > 0) {
+      return currentStudent.evaluations;
+    }
+    if (!isDemoStudent(currentStudent)) {
+      return [];
     }
     return generateDefaultAdminEvaluations(currentStudent, currentBatch, dailyActivityLogs, projectSubmissions);
   }, [currentStudent, currentBatch, multiEvaluationsMap, dailyActivityLogs, projectSubmissions]);
@@ -958,7 +1114,10 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
         currentBatch,
         formData, // preserve existing custom notes if any
         dailyActivityLogs,
-        projectSubmissions
+        projectSubmissions,
+        attendanceRecords,
+        resumeData || currentStudent.resumeData,
+        assignmentSubmissions
       );
       setFormData(aiGenerated);
       setIsAnalyzing(false);
@@ -1024,7 +1183,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     if (currentStudent.resources && currentStudent.resources.length > 0) {
       return currentStudent.resources;
     }
-    return DEFAULT_SAMPLE_RESOURCES(currentStudent.id, currentStudent.batchId);
+    return [];
   }, [currentStudent, documentsMap]);
 
   // Admin AI Document Analysis handler (Admin performs the analysis on uploaded document)
@@ -1161,6 +1320,30 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
       } catch {}
       return undefined;
     })();
+
+    if (customStoredVideo) {
+      return [
+        {
+          id: "video-custom-reflection",
+          type: "Technical Presentation & Capstone Defense",
+          tag: "Report Section 10",
+          videoUrl: customStoredVideo.videoUrl,
+          title: customStoredVideo.title || `${candidateName} — Capstone Architecture Presentation & Defense`,
+          duration: customStoredVideo.duration || "18:42",
+          uploadedAt: customStoredVideo.uploadedAt || "Uploaded Recording",
+          isAnalyzed: !!customStoredVideo.aiSummary && (customStoredVideo.aiFluencyScore || 0) > 0,
+          aiSummary: customStoredVideo.aiSummary || "Video uploaded. Ready for admin analysis.",
+          aiFluencyScore: customStoredVideo.aiFluencyScore || 0,
+          aiCommunicationScore: customStoredVideo.aiCommunicationScore || 0,
+          aiToneNotes: customStoredVideo.aiToneNotes || "Pending AI analysis.",
+          aiMilestones: customStoredVideo.aiMilestones || [],
+        },
+      ];
+    }
+
+    if (!isDemoStudent(currentStudent)) {
+      return [];
+    }
 
     return [
       {
@@ -2023,6 +2206,12 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
       localStorage.setItem("m2i_batch_custom_rounds", JSON.stringify(updatedCustom));
     } catch {}
 
+    axios.post("/api/evaluation-rounds/", {
+      batch: activeBatchId === "all" ? (batches[0]?.id || "batch_ai") : activeBatchId,
+      roundName: evalName,
+      isDeleted: false,
+    }).catch((err) => console.warn("Failed to persist new evaluation round to backend:", err));
+
     setMultiEvaluationsMap(updatedMap);
     try {
       localStorage.setItem("m2i_intern_multi_evaluations", JSON.stringify(updatedMap));
@@ -2059,6 +2248,12 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     try {
       localStorage.setItem("m2i_intern_deleted_rounds_by_batch", JSON.stringify(updatedDeletedMap));
     } catch {}
+
+    axios.post("/api/evaluation-rounds/", {
+      batch: activeBatchId === "all" ? (batches[0]?.id || "batch_ai") : activeBatchId,
+      roundName: roundToDelete,
+      isDeleted: true,
+    }).catch((err) => console.warn("Failed to persist deleted evaluation round to backend:", err));
 
     // Remove from custom rounds if it was custom
     if (batchCustomRounds[activeBatchId]) {
@@ -2848,8 +3043,8 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                   const hasEval = !!stu.evaluation;
                   const compScore = roundStatus.score;
                   const batchObj = batches.find((b) => b.id === stu.batchId);
-                  const resources = documentsMap[stu.id] || stu.resources || DEFAULT_SAMPLE_RESOURCES(stu.id, stu.batchId);
-                  const stuAllEvals = multiEvaluationsMap[stu.id] || (stu.evaluations && stu.evaluations.length > 0 ? stu.evaluations : generateDefaultAdminEvaluations(stu, null));
+                  const resources = documentsMap[stu.id] || stu.resources || [];
+                  const stuAllEvals = multiEvaluationsMap[stu.id] || (stu.evaluations && stu.evaluations.length > 0 ? stu.evaluations : []);
                   const reviewedAdminEvals = stuAllEvals.filter((e) => (e.overallRating || 0) > 0);
 
                   return (
@@ -2995,7 +3190,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                 const hasEval = !!stu.evaluation;
                 const compScore = roundStatus.score;
                 const batchObj = batches.find((b) => b.id === stu.batchId);
-                const resources = documentsMap[stu.id] || stu.resources || DEFAULT_SAMPLE_RESOURCES(stu.id, stu.batchId);
+                const resources = documentsMap[stu.id] || stu.resources || [];
 
                 return (
                   <div
@@ -3070,7 +3265,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                         >
                           <span className="text-[9px] uppercase font-bold text-slate-400 block">Videos</span>
                           <span className="text-xs font-black text-slate-800 flex items-center justify-center gap-1 mt-0.5">
-                            <Video className="w-3 h-3 text-emerald-600" /> 3 Recorded
+                            <Video className="w-3 h-3 text-emerald-600" /> {stu.reflectionVideo ? "1 Recorded" : (isDemoStudent(stu) ? "3 Recorded" : "0 Recorded")}
                           </span>
                         </div>
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Student, DailyActivityLog } from "../types";
+import { Student, DailyActivityLog, isDemoStudent } from "../types";
 import {
   FileText,
   Flame,
@@ -45,8 +45,9 @@ export const DailyActivityLogView: React.FC<DailyActivityLogViewProps> = ({
   // Search filter
   const [searchQuery, setSearchQuery] = useState("");
 
+  const isDemo = isDemoStudent(currentStudent);
   const studentLogs = activityLogs.filter(
-    (log) => !log.internId || log.internId === currentStudent.id
+    (log) => log.internId === currentStudent.id || (isDemo && !log.internId)
   );
 
   const filteredLogs = studentLogs.filter((log) => {
@@ -346,7 +347,7 @@ export const DailyActivityLogView: React.FC<DailyActivityLogViewProps> = ({
                 )}
 
                 {/* ── AI AUTO-REVIEW ASSESSMENT (if reviewed by AI) ── */}
-                {log.aiReview && (
+                {log.aiReview && (log.aiReview.summary || typeof log.aiReview.rating === "number") && (
                   <div className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/90 via-purple-50/50 to-blue-50/70 border border-indigo-200/80 text-xs space-y-2 animate-in fade-in">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
@@ -355,23 +356,25 @@ export const DailyActivityLogView: React.FC<DailyActivityLogViewProps> = ({
                         </div>
                         <div>
                           <span className="text-xs font-black text-indigo-950">AI Auto-Review Assessment</span>
-                          <span className="text-[10px] font-medium text-slate-400 ml-2">{log.aiReview.reviewedAt}</span>
+                          <span className="text-[10px] font-medium text-slate-400 ml-2">{log.aiReview.reviewedAt || ""}</span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-600 text-white shadow-2xs">
-                          {log.aiReview.rating.toFixed(1)} / 5.0 ⭐
+                          {typeof log.aiReview.rating === "number" ? log.aiReview.rating.toFixed(1) : "4.5"} / 5.0 ⭐
                         </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          log.aiReview.velocityAssessment === "Outstanding"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : log.aiReview.velocityAssessment === "Blocked"
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}>
-                          {log.aiReview.velocityAssessment}
-                        </span>
+                        {log.aiReview.velocityAssessment && (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            log.aiReview.velocityAssessment === "Outstanding"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : log.aiReview.velocityAssessment === "Blocked"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-blue-100 text-blue-800"
+                          }`}>
+                            {log.aiReview.velocityAssessment}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -402,7 +405,9 @@ export const DailyActivityLogView: React.FC<DailyActivityLogViewProps> = ({
 
             {filteredLogs.length === 0 && (
               <div className="p-8 text-center text-slate-400 text-xs">
-                No activity entries found matching your query.
+                {studentLogs.length === 0
+                  ? "No daily activity logs recorded yet. Submit your first daily achievement on the left to start tracking your sprint execution."
+                  : "No activity entries found matching your query."}
               </div>
             )}
           </div>

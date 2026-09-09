@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Student } from "../types";
+import { generateAIProfileEvaluation } from "../utils/aiProfileEvaluator";
 import {
   Sparkles,
   X,
@@ -39,46 +40,39 @@ export const AdminUniversalAIAnalyzerModal: React.FC<AdminUniversalAIAnalyzerMod
   if (!isOpen) return null;
 
   const totalStudents = students.length || 1;
-  const avgAttendance = Math.round(
-    students.reduce((acc, s) => acc + (s.attendanceRate || 95), 0) / totalStudents
-  );
-  const avgPoints = Math.round(
-    students.reduce((acc, s) => acc + (s.totalPoints || 450), 0) / totalStudents
-  );
+  const avgAttendance = students.length > 0
+    ? Math.round(students.reduce((acc, s) => acc + (s.attendanceRate ?? 0), 0) / students.length)
+    : 0;
+  const avgPoints = students.length > 0
+    ? Math.round(students.reduce((acc, s) => acc + (s.totalPoints ?? 0), 0) / students.length)
+    : 0;
 
   const handleApplyAll = () => {
     setIsCalibrating(true);
     setTimeout(() => {
       // Create calibrated evaluations for all students
       try {
+        let batchesList: any[] = [];
+        try {
+          batchesList = JSON.parse(localStorage.getItem("m2i_custom_batches") || "[]");
+        } catch {}
+        let dailyLogsList: any[] = [];
+        try {
+          dailyLogsList = JSON.parse(localStorage.getItem("m2i_daily_logs") || "[]");
+        } catch {}
+        let submissionsList: any[] = [];
+        try {
+          submissionsList = JSON.parse(localStorage.getItem("m2i_project_submissions") || "[]");
+        } catch {}
+
         const existingEvals = JSON.parse(localStorage.getItem("m2i_intern_evaluations") || "{}");
         const updatedList: Student[] = students.map((st) => {
-          const commScore = Math.floor(90 + Math.random() * 8); // 90-97
-          const fluScore = Math.floor(89 + Math.random() * 9); // 89-97
-          const gramScore = Math.floor(92 + Math.random() * 7); // 92-98
-          const projScore = Math.floor(91 + Math.random() * 8); // 91-98
-          const overallScore = Math.round((commScore + fluScore + gramScore + projScore) / 4);
-
-          const evalData = {
-            communicationScore: commScore,
-            grammarScore: gramScore,
-            fluencyScore: fluScore,
-            projectExecutionScore: projScore,
-            communicationNotes: `Articulate, structured responses with clear verbal framing. Demonstrates technical composure during oral system reviews.`,
-            grammarNotes: `Impeccable technical phrasing, correct domain terminology, and precision in engineering descriptions.`,
-            fluencyNotes: `High speech pacing without hesitation. Effectively explains asynchronous event architectures and microservice patterns.`,
-            projectExecutionNotes: `Robust test suite adherence, clean containerization blueprints, and modular separation of concerns.`,
-            facultyRemarks: `Outstanding intellectual vigor. Exhibits enterprise-grade readiness across design defenses, video presentations, and written whitepapers.`,
-            status: "Strong Hire" as const,
-            aiSummary: `Universal AI synthesis confirms candidate ranks in top tier for architectural execution, verbal communication, and analytical whitepaper depth.`,
-            evaluatedAt: new Date().toISOString(),
-            evaluatorName: "Vijaya Kumar Mekala"
-          };
-
+          const stBatch = batchesList.find((b) => b.id === st.batchId);
+          const evalData = generateAIProfileEvaluation(st, stBatch, undefined, dailyLogsList, submissionsList);
           existingEvals[st.id] = evalData;
           return {
             ...st,
-            evaluation: evalData
+            evaluation: evalData,
           };
         });
 
@@ -324,17 +318,17 @@ export const AdminUniversalAIAnalyzerModal: React.FC<AdminUniversalAIAnalyzerMod
                       <div className="min-w-0">
                         <h5 className="text-xs font-bold text-white truncate">{st.name}</h5>
                         <p className="text-[10px] text-slate-400 truncate">
-                          {st.college || "Engineering College"} • {st.totalPoints || 450} pts
+                          {st.college || "Engineering College"} • {st.totalPoints ?? 0} pts
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
-                        {st.evaluation?.status || "Strong Hire"}
+                        {st.evaluation?.status || "Ready for Evaluation"}
                       </span>
                       <span className="text-xs font-mono font-bold text-indigo-300">
-                        Score: {st.evaluation ? Math.round((st.evaluation.communicationScore + st.evaluation.projectExecutionScore) / 2) : 94}%
+                        Score: {st.evaluation ? Math.round((st.evaluation.communicationScore + ((st.evaluation as any).projectExecutionScore ?? st.evaluation.projectScore ?? 0)) / 2) : (st.attendanceRate ?? 0)}%
                       </span>
                     </div>
                   </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { UserRole, Student, InternReflectionVideo, InternResource } from "../types";
+import { UserRole, Student, InternReflectionVideo, InternResource, isDemoStudent } from "../types";
 import {
   Mail,
   GraduationCap,
@@ -125,6 +125,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       const saved = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
       if (currentStudent?.id && saved[currentStudent.id]) return saved[currentStudent.id];
     } catch {}
+    if (!isDemoStudent(currentStudent)) return undefined;
     return {
       videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
       title: "My Mind2I Training Experience & AI Systems Journey",
@@ -156,7 +157,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       }
     } catch {}
     if (currentStudent?.resources && currentStudent.resources.length > 0) return currentStudent.resources;
-    return DEFAULT_SAMPLE_RESOURCES(currentStudent?.id || "temp", currentStudent?.batchId);
+    return isDemoStudent(currentStudent) ? DEFAULT_SAMPLE_RESOURCES(currentStudent?.id || "temp", currentStudent?.batchId) : [];
   });
   const [newResTitle, setNewResTitle] = useState("");
   const [newResType, setNewResType] = useState<"whitepaper" | "blueprint" | "presentation" | "document">("whitepaper");
@@ -185,6 +186,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         setReflectionVideo(currentStudent.reflectionVideo);
         setVideoInputUrl(currentStudent.reflectionVideo.videoUrl || "");
         setVideoInputTitle(currentStudent.reflectionVideo.title || "");
+      } else {
+        try {
+          const savedVideos = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+          if (currentStudent.id && savedVideos[currentStudent.id]) {
+            setReflectionVideo(savedVideos[currentStudent.id]);
+            setVideoInputUrl(savedVideos[currentStudent.id].videoUrl || "");
+            setVideoInputTitle(savedVideos[currentStudent.id].title || "");
+          } else {
+            setReflectionVideo(undefined);
+            setVideoInputUrl("");
+            setVideoInputTitle("");
+          }
+        } catch {
+          setReflectionVideo(undefined);
+          setVideoInputUrl("");
+          setVideoInputTitle("");
+        }
       }
       try {
         const saved = JSON.parse(localStorage.getItem("m2i_intern_resources") || "{}");
@@ -192,10 +210,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           setResources(saved[currentStudent.id]);
         } else if (currentStudent.resources && currentStudent.resources.length > 0) {
           setResources(currentStudent.resources);
+        } else {
+          setResources(isDemoStudent(currentStudent) ? DEFAULT_SAMPLE_RESOURCES(currentStudent.id, currentStudent.batchId) : []);
         }
       } catch {
         if (currentStudent.resources && currentStudent.resources.length > 0) {
           setResources(currentStudent.resources);
+        } else {
+          setResources(isDemoStudent(currentStudent) ? DEFAULT_SAMPLE_RESOURCES(currentStudent.id, currentStudent.batchId) : []);
         }
       }
     }
@@ -206,9 +228,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setTimeout(() => {
       const candidateName = name || currentStudent?.name || "The candidate";
       const analyzed: InternReflectionVideo = {
-        videoUrl: customVideoUrl || reflectionVideo?.videoUrl || "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
+        videoUrl: customVideoUrl || reflectionVideo?.videoUrl || "",
         title: customTitle || reflectionVideo?.title || "My Mind2I Training Experience & AI Systems Journey",
-        duration: reflectionVideo?.duration || "18:42",
+        duration: reflectionVideo?.duration || "15:00",
         uploadedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
         aiMilestones: [
           { time: "02:14", desc: "Foundational mindset pivot: tackling complex AI architectures with disciplined problem-decomposition." },
@@ -241,9 +263,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleUploadVideoOnly = (customVideoUrl?: string, customTitle?: string) => {
     const candidateName = name || currentStudent?.name || "The candidate";
     const uploadedVideo: InternReflectionVideo = {
-      videoUrl: customVideoUrl || reflectionVideo?.videoUrl || "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
+      videoUrl: customVideoUrl || reflectionVideo?.videoUrl || "",
       title: customTitle || reflectionVideo?.title || "My Mind2I Training Experience & Capstone Presentation",
-      duration: reflectionVideo?.duration || "18:42",
+      duration: reflectionVideo?.duration || "15:00",
       uploadedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       aiSummary: `Uploaded by candidate (${candidateName}). Recording is queued for faculty review and AI analysis by admin.`,
       aiToneNotes: "Uploaded • Pending faculty evaluation",
