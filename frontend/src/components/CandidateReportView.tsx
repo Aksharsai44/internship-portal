@@ -30,7 +30,7 @@ import {
   Video, MessageSquare, Shield, Lightbulb, Users, ArrowRight, Eye, EyeOff,
   Volume2, Maximize2, Layers, Cpu, CornerDownRight, CheckSquare, Bookmark,
   Share2, ArrowUpRight, Search, FolderKanban, FileArchive, LayoutDashboard,
-  Radio, HelpCircle, ListChecks, FolderGit2
+  Radio, HelpCircle, ListChecks, FolderGit2, Lock, Unlock, CalendarDays
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -618,151 +618,262 @@ function getHeatmapBg(level: number): string {
   }
 }
 
-// ─── Dynamic Batch-Duration Growth Plan Generator ───
+// ─── Dynamic Batch-Duration & Real-Time Growth Plan Generator ───
 export interface GrowthPlanPhase {
+  id: string;
   badge: string;
   badgeBg: string;
   title: string;
   items: string[];
+  startDay: number;
+  endDay: number;
+  totalDays: number;
+  startDateFormatted: string;
+  endDateFormatted: string;
+  formattedDateRange: string;
+  status: "completed" | "in_progress" | "upcoming";
+  statusLabel: string;
+  progressPercent: number;
+  elapsedDaysInPhase: number;
+  daysRemaining: number;
+  unlockNotice?: string;
+  completedAt?: string;
 }
 
 export interface GrowthPlanData {
   title: string;
   subtitle: string;
+  totalDurationMonths: number;
+  startDateStr: string;
+  endDateStr: string;
+  formattedDateRange: string;
+  totalCohortDays: number;
+  elapsedCohortDays: number;
+  cohortProgressPercent: number;
+  currentPhaseIndex: number;
+  currentPhaseBadge: string;
+  currentPhaseTitle: string;
+  cohortStatus: "upcoming" | "active" | "completed";
   phases: GrowthPlanPhase[];
 }
 
-export function getGrowthPlan(batchDurationMonths: number = 6, technologies: string[] = []): GrowthPlanData {
+export function getGrowthPlan(
+  batchDurationMonths: number = 3,
+  technologies: string[] = [],
+  startDateStr?: string,
+  endDateStr?: string,
+  simulatedDaysElapsed?: number | null,
+  isBatchCompleted?: boolean
+): GrowthPlanData {
   const tech1 = technologies[0] || "Frontend & UI Core";
   const tech2 = technologies[1] || "Backend APIs & Microservices";
   const tech3 = technologies[2] || "Cloud Databases & CI/CD";
 
+  // Parse batch start and end dates with robust fallbacks
+  const defaultStart = "2026-09-09";
+  const defaultEnd = "2026-12-08";
+
+  let start = new Date(startDateStr ? startDateStr + "T00:00:00" : defaultStart + "T00:00:00");
+  if (isNaN(start.getTime())) {
+    start = new Date(defaultStart + "T00:00:00");
+  }
+
+  let end = new Date(endDateStr ? endDateStr + "T23:59:59" : defaultEnd + "T23:59:59");
+  if (isNaN(end.getTime())) {
+    end = new Date(start);
+    end.setMonth(end.getMonth() + (batchDurationMonths || 3));
+    end.setHours(23, 59, 59, 999);
+  }
+
+  const totalCohortMs = Math.max(86400000, end.getTime() - start.getTime());
+  const totalCohortDays = Math.max(1, Math.round(totalCohortMs / (1000 * 60 * 60 * 24)));
+
+  const now = new Date();
+  const nowTime = now.getTime();
+
+  // Real-time elapsed days:
+  let realElapsedDays = 0;
+  let cohortStatus: "upcoming" | "active" | "completed" = "active";
+
+  if (isBatchCompleted || nowTime > end.getTime()) {
+    cohortStatus = "completed";
+    realElapsedDays = totalCohortDays;
+  } else if (nowTime < start.getTime()) {
+    cohortStatus = "upcoming";
+    realElapsedDays = 0;
+  } else {
+    cohortStatus = "active";
+    realElapsedDays = Math.min(
+      totalCohortDays,
+      Math.max(1, Math.floor((nowTime - start.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+    );
+  }
+
+  // Allow manual simulation if requested by faculty/user
+  const effectiveElapsedDays = typeof simulatedDaysElapsed === "number" ? simulatedDaysElapsed : realElapsedDays;
+  const cohortProgressPercent = Math.min(100, Math.max(0, Math.round((effectiveElapsedDays / totalCohortDays) * 100)));
+
+  // Format batch overall date range
+  const formattedBatchRange = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} → ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
+  interface RawPhaseDef {
+    id: string;
+    badge: string;
+    badgeBg: string;
+    title: string;
+    startDay: number;
+    endDay: number;
+    items: string[];
+  }
+
+  let title = "30–60–90 Day Growth Plan";
+  let subtitle = "Systematic 3-month milestone progression from onboarding to autonomous ownership";
+  let rawPhases: RawPhaseDef[] = [];
+
   if (batchDurationMonths <= 1) {
-    return {
-      title: "30-Day Accelerated Execution Plan",
-      subtitle: "Sprint delivery, tooling setup, and capstone review for 1-month intensive cohort",
-      phases: [
-        {
-          badge: "Days 1–10",
-          badgeBg: "bg-indigo-600",
-          title: "Onboarding & Tooling Setup",
-          items: [
-            `Complete repository setup, environment onboarding, and ${tech1} tool stack familiarization`,
-            `Pair-program with senior peers on active ${tech2} codebase branches`,
-            "Deliver first verified pull request with complete unit tests and documentation",
-          ],
-        },
-        {
-          badge: "Days 11–20",
-          badgeBg: "bg-indigo-700",
-          title: "Sprint Execution & Ownership",
-          items: [
-            `Own a mid-complexity ${tech2} feature end-to-end from specification to test run`,
-            "Participate in daily standups and sprint code review cycles",
-            "Document API contracts and endpoint validation schemas",
-          ],
-        },
-        {
-          badge: "Days 21–30",
-          badgeBg: "bg-emerald-600",
-          title: "Production Capstone & Review",
-          items: [
-            `Deliver and containerize production capstone utilizing ${tech3}`,
-            "Present technical defense during official faculty appraisal panel",
-            "Complete performance review with mentor and verify exit scorecard metrics",
-          ],
-        },
-      ],
-    };
-  }
-
-  if (batchDurationMonths <= 3) {
-    return {
-      title: "30–60–90 Day Growth Plan",
-      subtitle: "Systematic 3-month milestone progression from onboarding to autonomous ownership",
-      phases: [
-        {
-          badge: "0–30 Days",
-          badgeBg: "bg-indigo-600",
-          title: "Onboarding & Integration",
-          items: [
-            `Complete onboarding documentation, codebase architecture review, and ${tech1} stack setup`,
-            `Shadow senior mentors on two active ${tech2} pull request reviews`,
-            "Deliver first standalone service module with tests and architectural documentation",
-          ],
-        },
-        {
-          badge: "31–60 Days",
-          badgeBg: "bg-indigo-700",
-          title: "Independent Ownership",
-          items: [
-            `Own a mid-complexity ${tech2} feature end-to-end from schema design to deployment`,
-            `Lead one internal knowledge-sharing demo on ${tech3} tooling and workflows`,
-            "Contribute to product architecture discussions with engineering trade-off analysis",
-          ],
-        },
-        {
-          badge: "61–90 Days",
-          badgeBg: "bg-emerald-600",
-          title: "Leadership & Scale",
-          items: [
-            "Mentor incoming peer interns during cohort sprint cycles and debug sessions",
-            "Propose and execute an automated test suite or build performance improvement",
-            "Complete final capstone defense and exit evaluation with faculty review panel",
-          ],
-        },
-      ],
-    };
-  }
-
-  if (batchDurationMonths <= 6) {
-    return {
-      title: "60–120–180 Day Growth Plan",
-      subtitle: "Comprehensive 6-month industry roadmap from system architecture to production scaling",
-      phases: [
-        {
-          badge: "Months 1–2 (0–60 Days)",
-          badgeBg: "bg-indigo-600",
-          title: "Systems Integration & Core Architecture",
-          items: [
-            `Deep-dive into enterprise codebase standards, design patterns, and ${tech1} frameworks`,
-            `Deliver modular service components in ${tech2} with unit and integration tests`,
-            "Participate in weekly sprint planning and technical RFC discussions",
-          ],
-        },
-        {
-          badge: "Months 3–4 (61–120 Days)",
-          badgeBg: "bg-indigo-700",
-          title: "Feature Ownership & Service Delivery",
-          items: [
-            `Architect and deliver end-to-end feature pipelines across ${tech2} and ${tech3}`,
-            "Implement automated CI/CD pipeline validations and code coverage thresholds",
-            "Conduct structured peer code reviews and optimize database query latency",
-          ],
-        },
-        {
-          badge: "Months 5–6 (121–180 Days)",
-          badgeBg: "bg-emerald-600",
-          title: "Production Scale & Capstone Defense",
-          items: [
-            "Deploy production-ready distributed capstone with real-time telemetry and monitoring",
-            "Act as sprint lead mentor for junior developers during milestone reviews",
-            "Complete comprehensive faculty accreditation panel and hiring partner defense",
-          ],
-        },
-      ],
-    };
-  }
-
-  // 12 Months / 1 Year
-  return {
-    title: "365-Day Enterprise Growth Roadmap",
-    subtitle: "Full-year enterprise engineering trajectory covering architecture, leadership, and scale",
-    phases: [
+    title = "30-Day Accelerated Execution Plan";
+    subtitle = "Sprint delivery, tooling setup, and capstone review for 1-month intensive cohort";
+    rawPhases = [
       {
+        id: "phase_1",
+        badge: "Days 1–10",
+        badgeBg: "bg-indigo-600",
+        title: "Onboarding & Tooling Setup",
+        startDay: 1,
+        endDay: 10,
+        items: [
+          `Complete repository setup, environment onboarding, and ${tech1} tool stack familiarization`,
+          `Pair-program with senior peers on active ${tech2} codebase branches`,
+          "Deliver first verified pull request with complete unit tests and documentation",
+        ],
+      },
+      {
+        id: "phase_2",
+        badge: "Days 11–20",
+        badgeBg: "bg-indigo-700",
+        title: "Sprint Execution & Ownership",
+        startDay: 11,
+        endDay: 20,
+        items: [
+          `Own a mid-complexity ${tech2} feature end-to-end from specification to test run`,
+          "Participate in daily standups and sprint code review cycles",
+          "Document API contracts and endpoint validation schemas",
+        ],
+      },
+      {
+        id: "phase_3",
+        badge: "Days 21–30",
+        badgeBg: "bg-emerald-600",
+        title: "Production Capstone & Review",
+        startDay: 21,
+        endDay: Math.max(30, totalCohortDays),
+        items: [
+          `Deliver and containerize production capstone utilizing ${tech3}`,
+          "Present technical defense during official faculty appraisal panel",
+          "Complete performance review with mentor and verify exit scorecard metrics",
+        ],
+      },
+    ];
+  } else if (batchDurationMonths <= 3) {
+    title = "30–60–90 Day Growth Plan";
+    subtitle = "Systematic 3-month milestone progression from onboarding to autonomous ownership";
+    rawPhases = [
+      {
+        id: "phase_1",
+        badge: "0–30 Days",
+        badgeBg: "bg-indigo-600",
+        title: "Onboarding & Integration",
+        startDay: 1,
+        endDay: 30,
+        items: [
+          `Complete onboarding documentation, codebase architecture review, and ${tech1} stack setup`,
+          `Shadow senior mentors on two active ${tech2} pull request reviews`,
+          "Deliver first standalone service module with tests and architectural documentation",
+        ],
+      },
+      {
+        id: "phase_2",
+        badge: "31–60 Days",
+        badgeBg: "bg-indigo-700",
+        title: "Independent Ownership",
+        startDay: 31,
+        endDay: 60,
+        items: [
+          `Own a mid-complexity ${tech2} feature end-to-end from schema design to deployment`,
+          `Lead one internal knowledge-sharing demo on ${tech3} tooling and workflows`,
+          "Contribute to product architecture discussions with engineering trade-off analysis",
+        ],
+      },
+      {
+        id: "phase_3",
+        badge: "61–90 Days",
+        badgeBg: "bg-emerald-600",
+        title: "Leadership & Scale",
+        startDay: 61,
+        endDay: Math.max(90, totalCohortDays),
+        items: [
+          "Mentor incoming peer interns during cohort sprint cycles and debug sessions",
+          "Propose and execute an automated test suite or build performance improvement",
+          "Complete final capstone defense and exit evaluation with faculty review panel",
+        ],
+      },
+    ];
+  } else if (batchDurationMonths <= 6) {
+    title = "60–120–180 Day Growth Plan";
+    subtitle = "Comprehensive 6-month industry roadmap from system architecture to production scaling";
+    rawPhases = [
+      {
+        id: "phase_1",
+        badge: "Months 1–2 (0–60 Days)",
+        badgeBg: "bg-indigo-600",
+        title: "Systems Integration & Core Architecture",
+        startDay: 1,
+        endDay: 60,
+        items: [
+          `Deep-dive into enterprise codebase standards, design patterns, and ${tech1} frameworks`,
+          `Deliver modular service components in ${tech2} with unit and integration tests`,
+          "Participate in weekly sprint planning and technical RFC discussions",
+        ],
+      },
+      {
+        id: "phase_2",
+        badge: "Months 3–4 (61–120 Days)",
+        badgeBg: "bg-indigo-700",
+        title: "Feature Ownership & Service Delivery",
+        startDay: 61,
+        endDay: 120,
+        items: [
+          `Architect and deliver end-to-end feature pipelines across ${tech2} and ${tech3}`,
+          "Implement automated CI/CD pipeline validations and code coverage thresholds",
+          "Conduct structured peer code reviews and optimize database query latency",
+        ],
+      },
+      {
+        id: "phase_3",
+        badge: "Months 5–6 (121–180 Days)",
+        badgeBg: "bg-emerald-600",
+        title: "Production Scale & Capstone Defense",
+        startDay: 121,
+        endDay: Math.max(180, totalCohortDays),
+        items: [
+          "Deploy production-ready distributed capstone with real-time telemetry and monitoring",
+          "Act as sprint lead mentor for junior developers during milestone reviews",
+          "Complete comprehensive faculty accreditation panel and hiring partner defense",
+        ],
+      },
+    ];
+  } else {
+    // 12 Months / 1 Year
+    title = "365-Day Enterprise Growth Roadmap";
+    subtitle = "Full-year enterprise engineering trajectory covering architecture, leadership, and scale";
+    rawPhases = [
+      {
+        id: "phase_1",
         badge: "Trimester 1 (Months 1–4)",
         badgeBg: "bg-indigo-600",
         title: "Enterprise Systems Onboarding",
+        startDay: 1,
+        endDay: 120,
         items: [
           `Master enterprise domain architecture, system contracts, and ${tech1} best practices`,
           `Deliver mission-critical service endpoints in ${tech2} with complete telemetry and logging`,
@@ -770,9 +881,12 @@ export function getGrowthPlan(batchDurationMonths: number = 6, technologies: str
         ],
       },
       {
+        id: "phase_2",
         badge: "Trimester 2 (Months 5–8)",
         badgeBg: "bg-indigo-700",
         title: "Technical Ownership & Microservices",
+        startDay: 121,
+        endDay: 240,
         items: [
           `Architect scalable microservices and asynchronous workers using ${tech2} & ${tech3}`,
           "Optimize throughput, eliminate memory leaks, and enforce zero-defect release standards",
@@ -780,16 +894,117 @@ export function getGrowthPlan(batchDurationMonths: number = 6, technologies: str
         ],
       },
       {
+        id: "phase_3",
         badge: "Trimester 3 (Months 9–12)",
         badgeBg: "bg-emerald-600",
         title: "Production Architecture & Engineering Leadership",
+        startDay: 241,
+        endDay: Math.max(365, totalCohortDays),
         items: [
           "Drive enterprise capstone deliverables from technical blueprint to cloud production",
           "Serve as designated technical mentor for cohort interns, leading architecture workshops",
           "Complete executive faculty defense and client partner hiring recommendation",
         ],
       },
-    ],
+    ];
+  }
+
+  let currentPhaseIndex = -1;
+
+  const phases: GrowthPlanPhase[] = rawPhases.map((phaseDef, idx) => {
+    const totalDays = Math.max(1, phaseDef.endDay - phaseDef.startDay + 1);
+
+    const pStartDate = new Date(start.getTime() + (phaseDef.startDay - 1) * 86400000);
+    let pEndDate = new Date(start.getTime() + (phaseDef.endDay - 1) * 86400000);
+    if (idx === rawPhases.length - 1 && pEndDate.getTime() < end.getTime()) {
+      pEndDate = new Date(end.getTime());
+    }
+
+    const startDateFormatted = pStartDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const endDateFormatted = pEndDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const formattedDateRange = `${startDateFormatted} – ${endDateFormatted}`;
+
+    let status: "completed" | "in_progress" | "upcoming";
+    let statusLabel = "";
+    let progressPercent = 0;
+    let elapsedDaysInPhase = 0;
+    let daysRemaining = 0;
+    let unlockNotice: string | undefined = undefined;
+    let completedAt: string | undefined = undefined;
+
+    if (effectiveElapsedDays >= phaseDef.endDay || isBatchCompleted) {
+      status = "completed";
+      statusLabel = "Completed · 100% Verified";
+      progressPercent = 100;
+      elapsedDaysInPhase = totalDays;
+      daysRemaining = 0;
+      completedAt = endDateFormatted;
+    } else if (effectiveElapsedDays >= phaseDef.startDay) {
+      status = "in_progress";
+      currentPhaseIndex = idx;
+      elapsedDaysInPhase = effectiveElapsedDays - phaseDef.startDay + 1;
+      progressPercent = Math.min(100, Math.max(1, Math.round((elapsedDaysInPhase / totalDays) * 100)));
+      daysRemaining = Math.max(0, phaseDef.endDay - effectiveElapsedDays);
+      statusLabel = `Active Sprint · Day ${elapsedDaysInPhase} of ${totalDays}`;
+    } else {
+      status = "upcoming";
+      progressPercent = 0;
+      elapsedDaysInPhase = 0;
+      daysRemaining = Math.max(0, phaseDef.startDay - effectiveElapsedDays);
+      statusLabel = `Locked · Scheduled`;
+      const prevPhase = rawPhases[idx - 1];
+      unlockNotice = prevPhase
+        ? `Unlocks upon completing ${prevPhase.badge} on ${startDateFormatted} (${daysRemaining} days remaining)`
+        : `Starts on ${startDateFormatted}`;
+    }
+
+    return {
+      id: phaseDef.id,
+      badge: phaseDef.badge,
+      badgeBg: phaseDef.badgeBg,
+      title: phaseDef.title,
+      items: phaseDef.items,
+      startDay: phaseDef.startDay,
+      endDay: phaseDef.endDay,
+      totalDays,
+      startDateFormatted,
+      endDateFormatted,
+      formattedDateRange,
+      status,
+      statusLabel,
+      progressPercent,
+      elapsedDaysInPhase,
+      daysRemaining,
+      unlockNotice,
+      completedAt,
+    };
+  });
+
+  if (currentPhaseIndex === -1) {
+    if (effectiveElapsedDays >= totalCohortDays) {
+      currentPhaseIndex = phases.length - 1;
+    } else {
+      currentPhaseIndex = 0;
+    }
+  }
+
+  const activePhase = phases[currentPhaseIndex] || phases[0];
+
+  return {
+    title,
+    subtitle,
+    totalDurationMonths: batchDurationMonths,
+    startDateStr: start.toISOString().split("T")[0],
+    endDateStr: end.toISOString().split("T")[0],
+    formattedDateRange: formattedBatchRange,
+    totalCohortDays,
+    elapsedCohortDays: effectiveElapsedDays,
+    cohortProgressPercent,
+    currentPhaseIndex,
+    currentPhaseBadge: activePhase?.badge || "Phase 1",
+    currentPhaseTitle: activePhase?.title || "Onboarding",
+    cohortStatus,
+    phases,
   };
 }
 
@@ -929,9 +1144,11 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
     return DEFAULT_SAMPLE_RESOURCES(student.id, student.batchId);
   }, [student]);
 
-  const [customStartDate, setCustomStartDate] = useState("2025-10-06");
-  const [customEndDate, setCustomEndDate] = useState("2025-11-28");
+  const [customStartDate, setCustomStartDate] = useState("2026-09-09");
+  const [customEndDate, setCustomEndDate] = useState("2026-12-08");
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  const [growthPlanSimulation, setGrowthPlanSimulation] = useState<number | null>(null);
+  const [previewRoadmapObjectives, setPreviewRoadmapObjectives] = useState(false);
   const [trainingGraphView, setTrainingGraphView] = useState<"both" | "weekly" | "monthly">("both");
   const [hoveredDay, setHoveredDay] = useState<{
     idx: number;
@@ -1202,8 +1419,8 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
       };
     }
     // Full Program
-    const startStr = studentBatch?.startDate || student?.internshipStartDate || "2025-09-02";
-    const endStr = studentBatch?.endDate || "2026-02-16";
+    const startStr = studentBatch?.startDate || student?.internshipStartDate || "2026-09-09";
+    const endStr = studentBatch?.endDate || student?.internshipEndDate || "2026-12-08";
     return {
       startDateStr: startStr,
       endDateStr: endStr,
@@ -6623,7 +6840,11 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
             {/* ═════════════════════════════════════════════════════════════ */}
             {(() => {
               const activeProjList = (projects && projects.length > 0)
-                ? projects.filter((p) => !p.batchId || p.batchId === "all" || p.batchId === studentBatch?.id || p.batchId === student.batchId)
+                ? projects.filter((p) => {
+                    const matchBatch = p.batchId && (p.batchId === studentBatch?.id || p.batchId === student.batchId);
+                    const matchStudent = Array.isArray(p.assignedStudentIds) && p.assignedStudentIds.includes(student.id);
+                    return matchBatch || matchStudent;
+                  })
                 : (isDemo ? INITIAL_PROJECT_ASSIGNMENTS : []);
               const activeSubList = submissions && submissions.length > 0 ? submissions : (isDemo ? INITIAL_PROJECT_SUBMISSIONS : []);
 
@@ -6916,44 +7137,341 @@ export const CandidateReportView: React.FC<CandidateReportViewProps> = ({
 
                 {/* Right Card: Dynamic Batch-Duration Growth Plan */}
                 {(() => {
+                  const batchStart = studentBatch?.startDate || student?.internshipStartDate || "2026-09-09";
+                  const batchEnd = studentBatch?.endDate || student?.internshipEndDate || "2026-12-08";
+                  const isBatchCompleted = studentBatch?.status === "completed" || student.status === "completed";
+
                   const growthPlan = getGrowthPlan(
-                    data.batchDurationMonths || studentBatch?.durationMonths || 6,
-                    studentBatch?.technologies || student.skills || []
+                    data.batchDurationMonths || studentBatch?.durationMonths || 3,
+                    studentBatch?.technologies || student.skills || [],
+                    batchStart,
+                    batchEnd,
+                    growthPlanSimulation,
+                    isBatchCompleted
                   );
 
                   return (
-                    <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3 break-inside-avoid print:block">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-slate-900">
-                          {growthPlan.title}
-                        </h4>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                          {data.batchDurationMonths || studentBatch?.durationMonths || 6} Months Cohort
-                        </span>
+                    <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4 break-inside-avoid print:block">
+                      {/* Header */}
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-black text-slate-900">
+                              {growthPlan.title}
+                            </h4>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                              {growthPlan.totalDurationMonths} Months Cohort
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
+                            <CalendarDays className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span>Batch Calendar: <strong>{growthPlan.formattedDateRange}</strong> ({growthPlan.totalCohortDays} Days Total)</span>
+                          </p>
+                        </div>
+
+                        {/* Status / Live Badge */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {growthPlanSimulation !== null ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                🧪 Simulated: Day {growthPlan.elapsedCohortDays} of {growthPlan.totalCohortDays}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setGrowthPlanSimulation(null)}
+                                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                              >
+                                Reset to Live
+                              </button>
+                            </div>
+                          ) : growthPlan.cohortStatus === "completed" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Cohort Completed (100%)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+                              </span>
+                              <span>Live: Day {growthPlan.elapsedCohortDays} of {growthPlan.totalCohortDays} ({growthPlan.cohortProgressPercent}% Elapsed)</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      {growthPlan.phases.map((phase, idx) => (
-                        <div
-                          key={idx}
-                          className={`p-3.5 rounded-xl border ${
-                            idx === 2
-                              ? "border-emerald-100 bg-emerald-50/30"
-                              : "border-indigo-100 bg-indigo-50/30"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-2 py-0.5 rounded-md ${phase.badgeBg} text-white text-[10px] font-bold`}>
-                              {phase.badge}
-                            </span>
-                            <span className="text-xs font-bold text-slate-800">{phase.title}</span>
-                          </div>
-                          <ul className="text-xs text-slate-600 space-y-1 pl-1">
-                            {phase.items.map((item, itemIdx) => (
-                              <li key={itemIdx}>› {item}</li>
-                            ))}
-                          </ul>
+                      {/* Simulation & View Controls */}
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                            Timeline:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setGrowthPlanSimulation(null)}
+                            className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all cursor-pointer ${
+                              growthPlanSimulation === null
+                                ? "bg-white text-indigo-700 shadow-2xs border border-indigo-200"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            Live Real-Time
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGrowthPlanSimulation(32)}
+                            className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all cursor-pointer ${
+                              growthPlanSimulation === 32
+                                ? "bg-white text-indigo-700 shadow-2xs border border-indigo-200"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                            title="Simulate passing 30-day milestone"
+                          >
+                            Simulate 30d Completed
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGrowthPlanSimulation(62)}
+                            className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all cursor-pointer ${
+                              growthPlanSimulation === 62
+                                ? "bg-white text-indigo-700 shadow-2xs border border-indigo-200"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                            title="Simulate passing 60-day milestone"
+                          >
+                            Simulate 60d Completed
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGrowthPlanSimulation(90)}
+                            className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all cursor-pointer ${
+                              growthPlanSimulation === 90
+                                ? "bg-white text-indigo-700 shadow-2xs border border-indigo-200"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                            title="Simulate completing full cohort"
+                          >
+                            Full Cohort
+                          </button>
                         </div>
-                      ))}
+
+                        <button
+                          type="button"
+                          onClick={() => setPreviewRoadmapObjectives((prev) => !prev)}
+                          className="text-[10px] font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 transition-colors cursor-pointer ml-auto"
+                        >
+                          {previewRoadmapObjectives ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{previewRoadmapObjectives ? "Hide Upcoming Details" : "Preview Roadmap Objectives"}</span>
+                        </button>
+                      </div>
+
+                      {/* 3-Step Visual Cohort Progress Segment */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                          <span>Cohort Milestone Trajectory</span>
+                          <span>{growthPlan.cohortProgressPercent}% Completed Overall</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5 h-2 w-full bg-slate-100 p-0.5 rounded-full">
+                          {growthPlan.phases.map((p, pIdx) => (
+                            <div key={pIdx} className="h-full rounded-full overflow-hidden bg-slate-200">
+                              <div
+                                className={`h-full transition-all duration-300 ${
+                                  p.status === "completed"
+                                    ? "bg-emerald-500 w-full"
+                                    : p.status === "in_progress"
+                                    ? "bg-indigo-600"
+                                    : "bg-transparent w-0"
+                                }`}
+                                style={p.status === "in_progress" ? { width: `${p.progressPercent}%` } : undefined}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 text-[9.5px] font-semibold text-slate-500 text-center">
+                          {growthPlan.phases.map((p, pIdx) => (
+                            <span
+                              key={pIdx}
+                              className={`truncate ${
+                                p.status === "in_progress"
+                                  ? "text-indigo-700 font-bold"
+                                  : p.status === "completed"
+                                  ? "text-emerald-700 font-bold"
+                                  : "text-slate-400"
+                              }`}
+                            >
+                              {p.badge} ({p.status === "completed" ? "Completed" : p.status === "in_progress" ? `${p.progressPercent}%` : "Locked"})
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Phase Cards */}
+                      <div className="space-y-3 pt-1">
+                        {growthPlan.phases.map((phase, idx) => {
+                          const isCompleted = phase.status === "completed";
+                          const isInProgress = phase.status === "in_progress";
+                          const isUpcoming = phase.status === "upcoming";
+
+                          return (
+                            <div
+                              key={phase.id || idx}
+                              className={`p-3.5 rounded-xl border transition-all ${
+                                isCompleted
+                                  ? "border-emerald-200 bg-emerald-50/40 shadow-2xs"
+                                  : isInProgress
+                                  ? "border-indigo-300 bg-linear-to-br from-indigo-50/70 via-white to-indigo-50/30 ring-1 ring-indigo-500/20 shadow-xs"
+                                  : "border-slate-200 bg-slate-50/50 opacity-90"
+                              }`}
+                            >
+                              {/* Phase Header */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-md text-white text-[10px] font-bold ${
+                                      isCompleted
+                                        ? "bg-emerald-600"
+                                        : isInProgress
+                                        ? phase.badgeBg || "bg-indigo-600"
+                                        : "bg-slate-400"
+                                    }`}
+                                  >
+                                    {phase.badge}
+                                  </span>
+                                  <span
+                                    className={`text-xs font-bold ${
+                                      isCompleted ? "text-emerald-950" : isInProgress ? "text-slate-900" : "text-slate-700"
+                                    }`}
+                                  >
+                                    {phase.title}
+                                  </span>
+                                </div>
+
+                                {/* Status Badge */}
+                                <div>
+                                  {isCompleted ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      Completed · Verified
+                                    </span>
+                                  ) : isInProgress ? (
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold">
+                                      <span className="relative flex h-1.5 w-1.5">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-600"></span>
+                                      </span>
+                                      Active Sprint (Day {phase.elapsedDaysInPhase} of {phase.totalDays})
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">
+                                      <Lock className="w-3 h-3 text-slate-400" />
+                                      Locked · Scheduled
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Dates and Progress Info */}
+                              <div className="flex flex-wrap items-center justify-between text-[10.5px] text-slate-500 mb-2 pb-2 border-b border-slate-100/80">
+                                <span className="font-semibold flex items-center gap-1">
+                                  <CalendarDays className="w-3 h-3 text-slate-400" />
+                                  <span>{phase.formattedDateRange}</span>
+                                </span>
+                                <span className="font-medium">
+                                  {isCompleted ? (
+                                    <strong className="text-emerald-700">100% Phase Completed</strong>
+                                  ) : isInProgress ? (
+                                    <strong className="text-indigo-700">
+                                      {phase.progressPercent}% Elapsed · {phase.daysRemaining} Days Remaining
+                                    </strong>
+                                  ) : (
+                                    <span className="text-slate-400">
+                                      Starts in {phase.daysRemaining} days
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+
+                              {/* Progress bar for Active Phase */}
+                              {isInProgress && (
+                                <div className="mb-2.5">
+                                  <div className="w-full bg-indigo-100/80 rounded-full h-1.5 overflow-hidden">
+                                    <div
+                                      className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                                      style={{ width: `${phase.progressPercent}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Locked Warning for Upcoming Phases */}
+                              {isUpcoming && (
+                                <div className="p-2.5 mb-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80 text-[11px] text-amber-900 flex items-start gap-2">
+                                  <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                  <div className="leading-snug">
+                                    <strong className="font-bold">Milestone Data Locked: </strong>
+                                    {phase.unlockNotice || `Objectives & performance telemetry for this phase activate after completing the previous milestone.`}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Deliverables Checklist / Scheduled Objectives */}
+                              <ul className="text-xs space-y-1.5 pl-0.5">
+                                {phase.items.map((item, itemIdx) => (
+                                  <li
+                                    key={itemIdx}
+                                    className={`flex items-start gap-2 ${
+                                      isCompleted
+                                        ? "text-slate-800"
+                                        : isInProgress
+                                        ? "text-slate-800"
+                                        : previewRoadmapObjectives
+                                        ? "text-slate-500"
+                                        : "text-slate-400"
+                                    }`}
+                                  >
+                                    {isCompleted ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                    ) : isInProgress ? (
+                                      <ChevronRight className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                                    ) : (
+                                      <Lock className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                                    )}
+                                    <span className="leading-relaxed">
+                                      {isUpcoming && !previewRoadmapObjectives ? (
+                                        <span className="italic">[Scheduled Objective] {item}</span>
+                                      ) : (
+                                        item
+                                      )}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+
+                              {/* Verification Note */}
+                              {isCompleted && (
+                                <div className="mt-2.5 pt-2 border-t border-emerald-200/60 flex items-center justify-between text-[10.5px] text-emerald-800">
+                                  <span className="font-bold flex items-center gap-1">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                    Milestone Verified &amp; Telemetry Calibrated
+                                  </span>
+                                  <span className="font-semibold text-emerald-700">Passed Gate</span>
+                                </div>
+                              )}
+
+                              {isInProgress && (
+                                <div className="mt-2.5 pt-2 border-t border-indigo-100 flex items-center justify-between text-[10.5px] text-indigo-800">
+                                  <span className="font-bold flex items-center gap-1">
+                                    <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                                    Active sprint deliverables · Daily hours actively logged
+                                  </span>
+                                  <span className="font-bold text-indigo-600">In-Flight</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })()}

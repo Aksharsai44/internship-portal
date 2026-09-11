@@ -711,8 +711,31 @@ export interface AppNotification {
   actionTab?: string;
 }
 
-export const isDemoStudent = (_student?: Student | null): boolean => {
-  // All students use real data from the backend
-  return false;
+const DEMO_STUDENT_IDS = new Set([
+  "intern_00_varshini",
+  "intern_01",
+  "intern_02",
+  "intern_03",
+  "intern_04",
+  "intern_05",
+  "intern_06",
+  "intern_07",
+  "intern_08",
+  "intern_09",
+]);
+
+const DEMO_BATCH_IDS = new Set([
+  "batch_1788462977274",
+  "batch_ai_agents_6m",
+  "batch_cloud_devops_3m",
+]);
+
+export const isDemoStudent = (student?: Student | null): boolean => {
+  if (!student) return false;
+  if (student.isDemo !== undefined) return Boolean(student.isDemo);
+  if (student.id && DEMO_STUDENT_IDS.has(student.id)) return true;
+  if (student.id && student.id.startsWith("stu_")) return false;
+  if (student.batchId && !DEMO_BATCH_IDS.has(student.batchId)) return false;
+  return Boolean(student.id && student.id.startsWith("intern_"));
 };
 

@@ -14,9 +14,14 @@ from .models import (
 )
 import os
 import time
+import random
+import uuid
+import logging
 from datetime import datetime, date
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+
+logger = logging.getLogger(__name__)
 from .serializers import (
     BatchSerializer, StudentSerializer, LearnHubModuleSerializer,
     LearnHubStudentProgressSerializer, LiveQuestionSerializer, LiveQAResponseSerializer,
@@ -513,6 +518,27 @@ class ClientUserViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+def create_system_notification(recipient_role, title, message, notif_type="system", action_tab="", recipient_id="", recipient_name="", recipient_email=""):
+    """Create real-time persistent AppNotification."""
+    try:
+        notif_id = f"notif_{int(time.time()*1000)}_{uuid.uuid4().hex[:6]}"
+        AppNotification.objects.create(
+            id=notif_id,
+            recipientRole=recipient_role,
+            recipientId=recipient_id or "",
+            recipientName=recipient_name or "",
+            recipientEmail=recipient_email or "",
+            title=title,
+            message=message,
+            type=notif_type,
+            actionTab=action_tab,
+            timestamp=datetime.now().isoformat(),
+            isRead=False
+        )
+    except Exception as e:
+        logger.warning(f"Failed to create system notification: {e}")
+
+
 class InterviewRequestViewSet(viewsets.ModelViewSet):
     queryset = InterviewRequest.objects.all().order_by('-createdAt')
     serializer_class = InterviewRequestSerializer
@@ -534,6 +560,28 @@ class InterviewRequestViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=req_status)
         return queryset
 
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        client_name = instance.client.companyName if instance.client else "A partner company"
+        intern_name = instance.intern.name if instance.intern else "a candidate"
+        create_system_notification(
+            recipient_role="admin",
+            title="New Interview Request Logged",
+            message=f"{client_name} requested an interview with candidate {intern_name}.",
+            notif_type="interview",
+            action_tab="interviews"
+        )
+        if instance.intern:
+            create_system_notification(
+                recipient_role="student",
+                recipient_id=instance.intern.id,
+                recipient_name=intern_name,
+                title="New Interview Invitation",
+                message=f"{client_name} requested an interview discussion with you.",
+                notif_type="interview",
+                action_tab="interviews"
+            )
+
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         """Admin approves an interview request."""
@@ -541,6 +589,18 @@ class InterviewRequestViewSet(viewsets.ModelViewSet):
         interview.status = 'approved'
         interview.adminNotes = request.data.get('adminNotes', interview.adminNotes)
         interview.save()
+        client_name = interview.client.companyName if interview.client else "Client"
+        intern_name = interview.intern.name if interview.intern else "Intern"
+        if interview.intern:
+            create_system_notification(
+                recipient_role="student",
+                recipient_id=interview.intern.id,
+                recipient_name=intern_name,
+                title="Interview Request Approved",
+                message=f"The admin team approved your interview request with {client_name}.",
+                notif_type="interview",
+                action_tab="interviews"
+            )
         serializer = self.get_serializer(interview)
         return Response(serializer.data)
 
@@ -551,6 +611,18 @@ class InterviewRequestViewSet(viewsets.ModelViewSet):
         interview.status = 'rejected'
         interview.adminNotes = request.data.get('adminNotes', interview.adminNotes)
         interview.save()
+        client_name = interview.client.companyName if interview.client else "Client"
+        intern_name = interview.intern.name if interview.intern else "Intern"
+        if interview.intern:
+            create_system_notification(
+                recipient_role="student",
+                recipient_id=interview.intern.id,
+                recipient_name=intern_name,
+                title="Interview Request Update",
+                message=f"Your pending interview request with {client_name} was closed.",
+                notif_type="interview",
+                action_tab="interviews"
+            )
         serializer = self.get_serializer(interview)
         return Response(serializer.data)
 
@@ -564,6 +636,28 @@ class InterviewRequestViewSet(viewsets.ModelViewSet):
         interview.interviewType = request.data.get('interviewType', interview.interviewType)
         interview.adminNotes = request.data.get('adminNotes', interview.adminNotes)
         interview.save()
+        client_name = interview.client.companyName if interview.client else "Client"
+        intern_name = interview.intern.name if interview.intern else "Intern"
+        date_str = interview.scheduledDate or "upcoming"
+        if interview.intern:
+            create_system_notification(
+                recipient_role="student",
+                recipient_id=interview.intern.id,
+                recipient_name=intern_name,
+                title="Interview Confirmed & Scheduled",
+                message=f"Your {interview.interviewType} interview with {client_name} is set for {date_str}.",
+                notif_type="interview",
+                action_tab="interviews"
+            )
+        if interview.client:
+            create_system_notification(
+                recipient_role="client",
+                recipient_id=interview.client.id,
+                title="Interview Confirmed",
+                message=f"Your interview session with {intern_name} is confirmed for {date_str}.",
+                notif_type="interview",
+                action_tab="interviews"
+            )
         serializer = self.get_serializer(interview)
         return Response(serializer.data)
 
@@ -674,6 +768,14 @@ class InternEvaluationRoundViewSet(viewsets.ModelViewSet):
         if not isinstance(data, dict):
             return Response({"error": "Expected an object mapping studentId to evaluations array"}, status=400)
 
+        def safe_float(val):
+            try:
+                if val is None or val == "":
+                    return 0.0
+                return float(val)
+            except (ValueError, TypeError):
+                return 0.0
+
         saved_count = 0
         for stu_id, evals_list in data.items():
             if not isinstance(evals_list, list) or len(evals_list) == 0:
@@ -685,6 +787,8 @@ class InternEvaluationRoundViewSet(viewsets.ModelViewSet):
             # Group evaluations by roundName
             rounds_map = {}
             for ev in evals_list:
+                if not isinstance(ev, dict):
+                    continue
                 r_name = ev.get('roundName') or ev.get('evaluationName') or "System Architecture & System Defense"
                 if r_name not in rounds_map:
                     rounds_map[r_name] = []
@@ -694,26 +798,47 @@ class InternEvaluationRoundViewSet(viewsets.ModelViewSet):
                 # Compute average score across reviews in this round
                 scores = []
                 for re in round_evals:
-                    c = re.get('communicationScore', 0)
-                    g = re.get('grammarScore', 0)
-                    f = re.get('fluencyScore', 0)
-                    p = re.get('projectScore', 0)
-                    avg = (c + g + f + p) / 4.0 if (c or g or f or p) else 0
+                    if not isinstance(re, dict):
+                        continue
+                    c = safe_float(re.get('communicationScore'))
+                    g = safe_float(re.get('grammarScore'))
+                    f = safe_float(re.get('fluencyScore'))
+                    p = safe_float(re.get('projectScore'))
+                    avg = (c + g + f + p) / 4.0 if (c or g or f or p) else 0.0
                     scores.append(avg)
                 consensus = round(sum(scores) / len(scores), 1) if scores else 0.0
 
-                round_id = f"eval_{stu_id}_{abs(hash(r_name)) % 1000000}"
-                InternEvaluationRound.objects.update_or_create(
-                    student=student_obj,
-                    roundName=r_name,
-                    defaults={
-                        'id': round_id,
-                        'batch': student_obj.batch,
-                        'evaluationsData': round_evals,
-                        'consensusScore': consensus,
-                    }
-                )
-                saved_count += 1
+                try:
+                    existing = InternEvaluationRound.objects.filter(student=student_obj, roundName=r_name).first()
+                    if existing:
+                        existing.evaluationsData = round_evals
+                        existing.consensusScore = consensus
+                        if student_obj.batch:
+                            existing.batch = student_obj.batch
+                        existing.save()
+                    else:
+                        round_id = f"eval_{stu_id}_{int(time.time()*1000)}_{random.randint(100, 999)}"
+                        InternEvaluationRound.objects.create(
+                            id=round_id,
+                            student=student_obj,
+                            batch=student_obj.batch,
+                            roundName=r_name,
+                            evaluationsData=round_evals,
+                            consensusScore=consensus,
+                        )
+                    saved_count += 1
+                    create_system_notification(
+                        recipient_role="student",
+                        recipient_id=student_obj.id,
+                        recipient_name=student_obj.name,
+                        title=f"Evaluation Round Updated: {r_name}",
+                        message=f"Evaluation consensus score: {consensus}/10. Review your latest feedback report.",
+                        notif_type="system",
+                        action_tab="my-report"
+                    )
+                except Exception as ex:
+                    print(f"Error saving evaluation round {r_name} for student {stu_id}: {ex}")
+                    continue
 
         return Response({"status": "synced", "savedRounds": saved_count})
 
@@ -758,6 +883,16 @@ class ProjectSubmissionViewSet(viewsets.ModelViewSet):
         if batch_id and batch_id != 'all':
             queryset = queryset.filter(batchId=batch_id)
         return queryset
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        create_system_notification(
+            recipient_role="admin",
+            title="New Project Submission",
+            message=f"{instance.studentName or 'An intern'} submitted project '{instance.projectTitle or 'Project'}' for review.",
+            notif_type="assignment",
+            action_tab="projects"
+        )
 
 
 class ShiftPatternViewSet(viewsets.ModelViewSet):
@@ -917,6 +1052,41 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_val)
         return queryset
 
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        create_system_notification(
+            recipient_role="admin",
+            title="New Leave Request Submitted",
+            message=f"{instance.internName or 'An intern'} submitted a leave request from {instance.startDate} to {instance.endDate} ({instance.reason[:60] if instance.reason else 'No reason specified'}).",
+            notif_type="leave_requested",
+            action_tab="shifts"
+        )
+
+    def perform_update(self, serializer):
+        old_status = getattr(self.get_object(), 'status', None)
+        instance = serializer.save()
+        if old_status != instance.status:
+            if instance.status == 'approved':
+                create_system_notification(
+                    recipient_role="student",
+                    recipient_id=instance.internId,
+                    recipient_name=instance.internName,
+                    title="Leave Request Approved",
+                    message=f"Your leave request for {instance.startDate} to {instance.endDate} has been approved.",
+                    notif_type="leave_approved",
+                    action_tab="my-shifts"
+                )
+            elif instance.status == 'rejected':
+                create_system_notification(
+                    recipient_role="student",
+                    recipient_id=instance.internId,
+                    recipient_name=instance.internName,
+                    title="Leave Request Declined",
+                    message=f"Your leave request for {instance.startDate} to {instance.endDate} was declined.",
+                    notif_type="leave_rejected",
+                    action_tab="my-shifts"
+                )
+
 
 class HolidayEventViewSet(viewsets.ModelViewSet):
     queryset = HolidayEvent.objects.all().order_by('date')
@@ -955,6 +1125,16 @@ class DailyActivityLogViewSet(viewsets.ModelViewSet):
         if status_val:
             queryset = queryset.filter(status=status_val)
         return queryset
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        create_system_notification(
+            recipient_role="admin",
+            title="Daily Activity Log Submitted",
+            message=f"{instance.internName or 'An intern'} recorded daily log for {instance.date} (Status: {instance.status}).",
+            notif_type="assignment",
+            action_tab="daily-logs"
+        )
 
     @action(detail=False, methods=['post'])
     def bulk_sync(self, request):
@@ -1026,9 +1206,12 @@ class AppNotificationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request):
         role = request.data.get('role')
-        qs = self.get_queryset()
+        user_id = request.data.get('userId')
+        qs = AppNotification.objects.all()
         if role:
             qs = qs.filter(recipientRole__in=[role, 'all'])
+        if user_id:
+            qs = qs.filter(recipientId__in=[user_id, ''])
         qs.update(isRead=True)
         return Response({"status": "all_marked_read"})
 
@@ -1036,13 +1219,17 @@ class AppNotificationViewSet(viewsets.ModelViewSet):
     def clear_all(self, request):
         role = request.data.get('role')
         user_id = request.data.get('userId')
-        qs = self.get_queryset()
+        unread_only = request.data.get('unreadOnly', False)
+        qs = AppNotification.objects.all()
         if role:
             qs = qs.filter(recipientRole__in=[role, 'all'])
         if user_id:
             qs = qs.filter(recipientId__in=[user_id, ''])
+        if unread_only:
+            qs = qs.filter(isRead=False)
+        count = qs.count()
         qs.delete()
-        return Response({"status": "cleared"})
+        return Response({"status": "cleared", "count": count})
 
 
 class InternResourceViewSet(viewsets.ModelViewSet):

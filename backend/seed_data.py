@@ -631,15 +631,20 @@ for dl in daily_logs:
 
 print("Seeded Daily Activity Logs.")
 
-# 10. Seed Project Assignments & Submissions
+# 10. Seed Demo Project Assignments & Submissions (Preserved for Demo Batches)
 projects = [
     {
         "id": "proj_01",
         "batch": batch1,
+        "batchName": batch1.name,
         "title": "Interactive Data Visualization & Analytics Engine",
         "description": "Create an accessible, responsive dashboard view featuring real-time data streaming simulation, filter controls, and CSS charts.",
+        "executiveSummary": "Create an accessible, responsive dashboard view featuring real-time data streaming simulation, filter controls, and CSS charts.",
+        "detailedInstructions": "Implement interactive SVG charts, data export engine, and Lighthouse 95+ audit score.",
         "category": "Frontend (React, Tailwind, State)",
+        "technicalCategory": "Frontend (React, Tailwind, State)",
         "tier": "intermediate",
+        "priority": "Medium",
         "status": "in_progress",
         "assignedStudentIds": [varshini.id, pooja.id],
         "technologies": ["React 19", "TailwindCSS", "Recharts", "TypeScript"],
@@ -650,15 +655,21 @@ projects = [
         "deadlineTime": "23:59",
         "githubRepo": "https://github.com/mind2i-interns/data-viz-engine",
         "figmaUrl": "https://figma.com/@mind2i/data-viz",
-        "points": 100
+        "points": 100,
+        "leaderboardPoints": 100
     },
     {
         "id": "proj_02",
         "batch": batch2,
+        "batchName": batch2.name,
         "title": "Multi-Agent Swarm for Automated Code Reviews",
         "description": "Construct a decentralized LLM agent swarm using LangChain and Gemini 3.7 to perform automated AST parsing, security audits, and pull request reviews.",
-        "category": "Artificial Intelligence & Agents",
+        "executiveSummary": "Construct a decentralized LLM agent swarm using LangChain and Gemini 3.7 to perform automated AST parsing, security audits, and pull request reviews.",
+        "detailedInstructions": "Build Agent Orchestrator, Security Linter Plugin, and Benchmark Report.",
+        "category": "AI Engineering",
+        "technicalCategory": "AI & Algorithms (LLM/Gemini)",
         "tier": "advanced",
+        "priority": "High",
         "status": "in_progress",
         "assignedStudentIds": [rohan.id, aarav.id],
         "technologies": ["Python", "Gemini 3.7", "LangChain", "FastAPI", "VectorDB"],
@@ -668,15 +679,21 @@ projects = [
         "deadline": (date.today() + timedelta(days=10)).strftime("%Y-%m-%d"),
         "deadlineTime": "23:59",
         "githubRepo": "https://github.com/mind2i-interns/agent-swarm-reviewer",
-        "points": 150
+        "points": 150,
+        "leaderboardPoints": 150
     },
     {
         "id": "proj_03",
         "batch": batch3,
+        "batchName": batch3.name,
         "title": "Zero-Downtime Kubernetes Blue/Green Deployment Pipeline",
         "description": "Architect a production-grade CI/CD pipeline with GitHub Actions, Terraform, and ArgoCD for blue/green rolling deployments on AWS EKS.",
+        "executiveSummary": "Architect a production-grade CI/CD pipeline with GitHub Actions, Terraform, and ArgoCD for blue/green rolling deployments on AWS EKS.",
+        "detailedInstructions": "Deliver Terraform Scripts, ArgoCD Helm Manifests, and Load Balancing Strategy.",
         "category": "DevOps & Cloud Architecture",
+        "technicalCategory": "DevOps & Containerization",
         "tier": "advanced",
+        "priority": "High",
         "status": "in_progress",
         "assignedStudentIds": [nikhil.id],
         "technologies": ["Kubernetes", "AWS EKS", "ArgoCD", "Terraform", "Docker"],
@@ -686,13 +703,14 @@ projects = [
         "deadline": (date.today() + timedelta(days=5)).strftime("%Y-%m-%d"),
         "deadlineTime": "18:00",
         "githubRepo": "https://github.com/mind2i-interns/k8s-bluegreen-pipeline",
-        "points": 120
+        "points": 120,
+        "leaderboardPoints": 120
     }
 ]
 for p in projects:
     ProjectAssignment.objects.update_or_create(id=p["id"], defaults=p)
 
-# Submissions
+# Submissions for Demo Batches
 submissions = [
     {
         "id": "sub_varshini_proj_01",
@@ -701,12 +719,16 @@ submissions = [
         "studentName": varshini.name,
         "batchId": batch1.id,
         "githubUrl": "https://github.com/varshini-reddy/mind2i-dataviz",
+        "githubRepoUrl": "https://github.com/varshini-reddy/mind2i-dataviz",
         "liveDemoUrl": "https://varshini-dataviz.mind2i.app",
         "documentationUrl": "https://varshini-dataviz.mind2i.app/docs",
         "notes": "Implemented custom SVG time-series graphs with full dark-mode and memoized responsive containers.",
+        "submissionNotes": "Implemented custom SVG time-series graphs with full dark-mode and memoized responsive containers.",
         "status": "passed",
         "grade": "A+",
+        "gradePoints": 98,
         "feedback": "Outstanding engineering. Exceeded requirements with zero console warnings and 100% WCAG compliance.",
+        "mentorFeedback": "Outstanding engineering. Exceeded requirements with zero console warnings and 100% WCAG compliance.",
         "reviewedBy": "Vijaya Kumar Mekala",
         "submittedAt": (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
     },
@@ -717,11 +739,15 @@ submissions = [
         "studentName": rohan.name,
         "batchId": batch2.id,
         "githubUrl": "https://github.com/rohan-verma/agentic-swarm",
+        "githubRepoUrl": "https://github.com/rohan-verma/agentic-swarm",
         "liveDemoUrl": "https://agent-swarm.mind2i.app",
         "notes": "Created 3 specialized agents: Security Auditor, Performance Profiler, and Syntax Optimizer.",
+        "submissionNotes": "Created 3 specialized agents: Security Auditor, Performance Profiler, and Syntax Optimizer.",
         "status": "in_review",
         "grade": "",
+        "gradePoints": 0,
         "feedback": "Under evaluation by Lead Architect.",
+        "mentorFeedback": "Under evaluation by Lead Architect.",
         "reviewedBy": "Prof. Ananya Varma",
         "submittedAt": date.today().strftime("%Y-%m-%d")
     }
@@ -729,7 +755,7 @@ submissions = [
 for sub in submissions:
     ProjectSubmission.objects.update_or_create(id=sub["id"], defaults=sub)
 
-print("Seeded Project Assignments and Submissions.")
+print("Seeded Project Assignments and Submissions for Demo Batches.")
 
 # 11. Seed Profile Evaluation Rounds & Consensus Reviews
 standard_rounds = [

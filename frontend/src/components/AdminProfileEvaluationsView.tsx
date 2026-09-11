@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import axios from "axios";
 import { Student, Batch, InternEvaluation, InternResource, InternReflectionVideo, isDemoStudent } from "../types";
 import { generateAIProfileEvaluation } from "../utils/aiProfileEvaluator";
+import { DEFAULT_SAMPLE_RESOURCES } from "./InternResourcesVaultView";
 import {
   Sparkles,
   CheckCircle2,
@@ -269,9 +270,8 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "evaluated" | "pending" | "my_pending" | "my_evaluated">("all");
 
-  // Document & Report Modal states
+  // Document Modal state
   const [previewDocument, setPreviewDocument] = useState<InternResource | null>(null);
-  const [previewReportType, setPreviewReportType] = useState<"executive" | "resume" | "audit" | null>(null);
 
   // Active playing video index in Videos tab
   const [playingVideoIdx, setPlayingVideoIdx] = useState<number | null>(null);
@@ -1183,6 +1183,9 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
     if (currentStudent.resources && currentStudent.resources.length > 0) {
       return currentStudent.resources;
     }
+    if (isDemoStudent(currentStudent)) {
+      return DEFAULT_SAMPLE_RESOURCES(currentStudent.id, currentStudent.batchId);
+    }
     return [];
   }, [currentStudent, documentsMap]);
 
@@ -1321,24 +1324,54 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
       return undefined;
     })();
 
-    if (customStoredVideo) {
-      return [
-        {
-          id: "video-custom-reflection",
-          type: "Technical Presentation & Capstone Defense",
-          tag: "Report Section 10",
-          videoUrl: customStoredVideo.videoUrl,
-          title: customStoredVideo.title || `${candidateName} — Capstone Architecture Presentation & Defense`,
-          duration: customStoredVideo.duration || "18:42",
-          uploadedAt: customStoredVideo.uploadedAt || "Uploaded Recording",
-          isAnalyzed: !!customStoredVideo.aiSummary && (customStoredVideo.aiFluencyScore || 0) > 0,
-          aiSummary: customStoredVideo.aiSummary || "Video uploaded. Ready for admin analysis.",
-          aiFluencyScore: customStoredVideo.aiFluencyScore || 0,
-          aiCommunicationScore: customStoredVideo.aiCommunicationScore || 0,
-          aiToneNotes: customStoredVideo.aiToneNotes || "Pending AI analysis.",
-          aiMilestones: customStoredVideo.aiMilestones || [],
-        },
-      ];
+    const resultVideos: any[] = [];
+
+    if (customStoredVideo && customStoredVideo.videoUrl) {
+      resultVideos.push({
+        id: "video-custom-reflection",
+        type: "Technical Presentation & Capstone Defense",
+        tag: "Report Section 10",
+        videoUrl: customStoredVideo.videoUrl,
+        title: customStoredVideo.title || `${candidateName} — Capstone Architecture Presentation & Defense`,
+        duration: customStoredVideo.duration || "18:42",
+        uploadedAt: customStoredVideo.uploadedAt || "Uploaded Recording",
+        isAnalyzed: !!customStoredVideo.aiSummary && (customStoredVideo.aiFluencyScore || 0) > 0,
+        aiSummary: customStoredVideo.aiSummary || "Video uploaded. Ready for admin analysis.",
+        aiFluencyScore: customStoredVideo.aiFluencyScore || 0,
+        aiCommunicationScore: customStoredVideo.aiCommunicationScore || 0,
+        aiToneNotes: customStoredVideo.aiToneNotes || "Pending AI analysis.",
+        aiMilestones: customStoredVideo.aiMilestones || [],
+      });
+    }
+
+    // Include project demo videos submitted by this candidate
+    const internProjectSubs = (projectSubmissions || []).filter(
+      (s: any) => (s.studentId === currentStudent.id || s.studentEmail === currentStudent.email) && !!s.demoVideoUrl
+    );
+    internProjectSubs.forEach((sub: any, sIdx: number) => {
+      resultVideos.push({
+        id: `video-proj-${sub.id || sIdx}`,
+        type: "Project Execution & Demo Recording",
+        tag: sub.projectTitle || `Project Demo #${sIdx + 1}`,
+        videoUrl: sub.demoVideoUrl,
+        title: `${candidateName} — ${sub.projectTitle || "Project Demo Walkthrough"}`,
+        duration: "10:00",
+        uploadedAt: sub.submittedAt || "Submitted Project Demo",
+        isAnalyzed: true,
+        aiSummary: sub.feedback || `Live project walkthrough demonstrated by ${candidateName}.`,
+        aiFluencyScore: 90,
+        aiCommunicationScore: 92,
+        aiToneNotes: "Clear demonstration of project requirements and functionality.",
+        aiMilestones: [
+          { time: "01:00", desc: "Project Objectives & Architecture" },
+          { time: "05:00", desc: "Live Functional Feature Demo" },
+          { time: "09:00", desc: "Summary & Conclusion" },
+        ],
+      });
+    });
+
+    if (resultVideos.length > 0) {
+      return resultVideos;
     }
 
     if (!isDemoStudent(currentStudent)) {
@@ -1350,23 +1383,21 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
         id: "video-1-presentation",
         type: "Technical Presentation & Capstone Defense",
         tag: "Report Section 10",
-        videoUrl: customStoredVideo?.videoUrl || "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
-        title: customStoredVideo?.title || `${candidateName} — Capstone Architecture Presentation & Defense`,
-        duration: customStoredVideo?.duration || "18:42",
-        uploadedAt: customStoredVideo?.uploadedAt || "Verified Active Cohort",
-        isAnalyzed: !!customStoredVideo?.aiSummary && (customStoredVideo?.aiFluencyScore || 0) > 0,
-        aiSummary: customStoredVideo?.aiSummary || `${candidateName} presented a comprehensive capstone defense detailing microservices decoupling, Kafka message streams, and production container orchestration with crisp technical articulation.`,
-        aiFluencyScore: customStoredVideo?.aiFluencyScore || 92,
-        aiCommunicationScore: customStoredVideo?.aiCommunicationScore || 94,
-        aiToneNotes: customStoredVideo?.aiToneNotes || "Confident, articulate, methodical technical explanations with clear architectural diagrams.",
-        aiMilestones: customStoredVideo?.aiMilestones && customStoredVideo.aiMilestones.length > 0
-          ? customStoredVideo.aiMilestones
-          : [
-              { time: "02:14", desc: "Problem Statement & Cloud Architecture Overview" },
-              { time: "07:38", desc: "Microservices Implementation, Kafka & Event Streams" },
-              { time: "12:45", desc: "Database Scaling, Latency Profiling & Edge Cases" },
-              { time: "16:20", desc: "Production Deployment, CI/CD & Fellowship Retrospective" },
-            ],
+        videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-software-developer-working-on-code-42898-large.mp4",
+        title: `${candidateName} — Capstone Architecture Presentation & Defense`,
+        duration: "18:42",
+        uploadedAt: "Verified Active Cohort",
+        isAnalyzed: true,
+        aiSummary: `${candidateName} presented a comprehensive capstone defense detailing microservices decoupling, Kafka message streams, and production container orchestration with crisp technical articulation.`,
+        aiFluencyScore: 92,
+        aiCommunicationScore: 94,
+        aiToneNotes: "Confident, articulate, methodical technical explanations with clear architectural diagrams.",
+        aiMilestones: [
+          { time: "02:14", desc: "Problem Statement & Cloud Architecture Overview" },
+          { time: "07:38", desc: "Microservices Implementation, Kafka & Event Streams" },
+          { time: "12:45", desc: "Database Scaling, Latency Profiling & Edge Cases" },
+          { time: "16:20", desc: "Production Deployment, CI/CD & Fellowship Retrospective" },
+        ],
       },
       {
         id: "video-2-project-demo",
@@ -1409,19 +1440,44 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
         ],
       },
     ];
-  }, [currentStudent]);
+  }, [currentStudent, projectSubmissions]);
+
+  // Real-time video count calculation for any student in cohort directory
+  const getStudentVideoCount = useCallback((stu: Student): number => {
+    let count = 0;
+    if (stu.reflectionVideo && stu.reflectionVideo.videoUrl) {
+      count++;
+    } else {
+      try {
+        const stored = JSON.parse(localStorage.getItem("m2i_intern_videos") || "{}");
+        if (stored[stu.id] && stored[stu.id].videoUrl) {
+          count++;
+        }
+      } catch {}
+    }
+    const internProjectSubs = (projectSubmissions || []).filter(
+      (s: any) => (s.studentId === stu.id || s.studentEmail === stu.email) && !!s.demoVideoUrl
+    );
+    count += internProjectSubs.length;
+
+    if (count > 0) return count;
+    if (isDemoStudent(stu)) return 3;
+    return 0;
+  }, [projectSubmissions]);
 
   // Admin AI Video Analysis handler (Admin performs the speech and telemetry analysis on recording)
   const [analyzingVideoId, setAnalyzingVideoId] = useState<string | null>(null);
-  const handleAdminAnalyzeVideo = (videoId: string) => {
+  const handleAdminAnalyzeVideo = (videoId?: string) => {
     if (!currentStudent) return;
-    setAnalyzingVideoId(videoId);
+    const targetVideo = (videoId ? candidateVideos.find((v) => v.id === videoId) : null) || candidateVideos[0];
+    if (!targetVideo) return;
+    setAnalyzingVideoId(targetVideo.id);
     setTimeout(() => {
       const candidateName = currentStudent.name || "The candidate";
       const analyzedVideo: InternReflectionVideo = {
-        videoUrl: candidateVideos[0].videoUrl,
-        title: candidateVideos[0].title,
-        duration: candidateVideos[0].duration,
+        videoUrl: targetVideo.videoUrl,
+        title: targetVideo.title,
+        duration: targetVideo.duration,
         uploadedAt: "Admin Verified & Analyzed",
         aiSummary: `Admin faculty analysis completed for ${candidateName}. Verbal presentation exhibits lucid architecture synthesis, rapid response to technical prompts, and mastery over asynchronous pipeline designs.`,
         aiFluencyScore: 95,
@@ -2428,39 +2484,33 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
           </div>
         </div>
 
-        {/* ─── Batch & Search Controls Bar ─── */}
+        {/* ─── Batch & Search Controls Bar (Dropdown-Based) ─── */}
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-          {/* Cohort Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            <button
-              onClick={() => setActiveBatchId("all")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                activeBatchId === "all"
-                  ? "bg-indigo-600 text-white shadow-xs"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+          {/* Left: Scroll-Down Batch Selector Dropdown */}
+          <div className="flex items-center gap-2.5 flex-1 min-w-[240px]">
+            <label className="text-xs font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5 shrink-0">
+              <Users className="w-4 h-4 text-indigo-600" />
+              <span>Cohort Batch:</span>
+            </label>
+            <select
+              value={activeBatchId}
+              onChange={(e) => setActiveBatchId(e.target.value)}
+              className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 hover:border-indigo-300 focus:outline-hidden focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 cursor-pointer transition min-w-[200px] sm:min-w-[280px] max-w-md shadow-2xs"
+              title="Select batch cohort from dropdown"
             >
-              All Batches ({students.length})
-            </button>
-            {batches.map((b) => {
-              const count = students.filter((s) => s.batchId === b.id).length;
-              return (
-                <button
-                  key={b.id}
-                  onClick={() => setActiveBatchId(b.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                    activeBatchId === b.id
-                      ? "bg-indigo-600 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  {b.name} ({count})
-                </button>
-              );
-            })}
+              <option value="all">📁 All Batches ({students.length} Interns)</option>
+              {batches.map((b) => {
+                const count = students.filter((s) => s.batchId === b.id).length;
+                return (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({count} {count === 1 ? "Intern" : "Interns"})
+                  </option>
+                );
+              })}
+            </select>
           </div>
 
-          {/* Search & Status Filter */}
+          {/* Right: Search & Status Filter */}
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             <div className="relative flex-1 sm:w-60">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -2469,14 +2519,14 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                 placeholder="Search intern by name/email..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium focus:outline-hidden focus:border-indigo-500 focus:bg-white"
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium focus:outline-hidden focus:border-indigo-500 focus:bg-white"
               />
             </div>
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 cursor-pointer"
             >
               <option value="all">All Interns ({students.length})</option>
               <option value="my_pending">
@@ -3046,6 +3096,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                   const resources = documentsMap[stu.id] || stu.resources || [];
                   const stuAllEvals = multiEvaluationsMap[stu.id] || (stu.evaluations && stu.evaluations.length > 0 ? stu.evaluations : []);
                   const reviewedAdminEvals = stuAllEvals.filter((e) => (e.overallRating || 0) > 0);
+                  const videoCount = getStudentVideoCount(stu);
 
                   return (
                     <div
@@ -3112,7 +3163,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                           title="View candidate presentation videos"
                         >
                           <Video className="w-3 h-3 text-emerald-600" />
-                          <span>3 Videos</span>
+                          <span>{videoCount} {videoCount === 1 ? "Video" : "Videos"}</span>
                         </span>
                       </div>
 
@@ -3191,6 +3242,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                 const compScore = roundStatus.score;
                 const batchObj = batches.find((b) => b.id === stu.batchId);
                 const resources = documentsMap[stu.id] || stu.resources || [];
+                const videoCount = getStudentVideoCount(stu);
 
                 return (
                   <div
@@ -3265,7 +3317,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                         >
                           <span className="text-[9px] uppercase font-bold text-slate-400 block">Videos</span>
                           <span className="text-xs font-black text-slate-800 flex items-center justify-center gap-1 mt-0.5">
-                            <Video className="w-3 h-3 text-emerald-600" /> {stu.reflectionVideo ? "1 Recorded" : (isDemoStudent(stu) ? "3 Recorded" : "0 Recorded")}
+                            <Video className="w-3 h-3 text-emerald-600" /> {videoCount} {videoCount === 1 ? "Video" : "Videos"}
                           </span>
                         </div>
 
@@ -4944,130 +4996,6 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
             );
           })()}
 
-          {/* ─── Candidate Official Reports Hub ─── */}
-          <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <FileArchive className="w-5 h-5 text-indigo-600" />
-                <h4 className="text-base font-black text-slate-900">
-                  Candidate Reports Vault
-                </h4>
-              </div>
-              <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-0.5 rounded-full">
-                All Reports Synchronized
-              </span>
-            </div>
-
-            <p className="text-xs text-slate-500 font-medium">
-              Access and preview all official performance audits, executive briefings, and ATS credentials generated for <strong>{currentStudent?.name}</strong>:
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* Report 1: 12-Section Live Dossier */}
-              <div
-                onClick={handlePreviewLiveDossier}
-                className="p-4 rounded-2xl bg-slate-50 hover:bg-indigo-50/80 border border-slate-200 hover:border-indigo-300 transition-all cursor-pointer group space-y-2 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs">
-                      <FileText className="w-4 h-4" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                      12 Sections
-                    </span>
-                  </div>
-                  <h5 className="text-xs font-black text-slate-900 group-hover:text-indigo-700">
-                    Candidate Full Live Dossier
-                  </h5>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Complete telemetry, coding analysis &amp; faculty appraisal
-                  </p>
-                </div>
-                <span className="text-[11px] text-indigo-600 font-bold flex items-center gap-1 pt-2 border-t border-slate-200/60">
-                  <ExternalLink className="w-3 h-3" /> Open Live Report
-                </span>
-              </div>
-
-              {/* Report 2: Executive Hiring Summary */}
-              <div
-                onClick={() => setPreviewReportType("executive")}
-                className="p-4 rounded-2xl bg-slate-50 hover:bg-violet-50/80 border border-slate-200 hover:border-violet-300 transition-all cursor-pointer group space-y-2 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs">
-                      <Award className="w-4 h-4" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-violet-100 text-violet-800 border border-violet-200">
-                      1-Page PDF
-                    </span>
-                  </div>
-                  <h5 className="text-xs font-black text-slate-900 group-hover:text-violet-700">
-                    Executive Hiring Summary
-                  </h5>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Condensed recruiter scorecard &amp; placement rating
-                  </p>
-                </div>
-                <span className="text-[11px] text-violet-600 font-bold flex items-center gap-1 pt-2 border-t border-slate-200/60">
-                  <Eye className="w-3 h-3" /> Preview Briefing
-                </span>
-              </div>
-
-              {/* Report 3: ATS Resume */}
-              <div
-                onClick={() => setPreviewReportType("resume")}
-                className="p-4 rounded-2xl bg-slate-50 hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-300 transition-all cursor-pointer group space-y-2 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs">
-                      <Code2 className="w-4 h-4" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      ATS Verified
-                    </span>
-                  </div>
-                  <h5 className="text-xs font-black text-slate-900 group-hover:text-emerald-700">
-                    ATS Resume &amp; Skills
-                  </h5>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Standardized technical resume with repo links
-                  </p>
-                </div>
-                <span className="text-[11px] text-emerald-600 font-bold flex items-center gap-1 pt-2 border-t border-slate-200/60">
-                  <Eye className="w-3 h-3" /> View ATS Resume
-                </span>
-              </div>
-
-              {/* Report 4: Calibration Audit */}
-              <div
-                onClick={() => setPreviewReportType("audit")}
-                className="p-4 rounded-2xl bg-slate-50 hover:bg-cyan-50/80 border border-slate-200 hover:border-cyan-300 transition-all cursor-pointer group space-y-2 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="w-8 h-8 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs">
-                      <Sparkles className="w-4 h-4" />
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
-                      Telemetry
-                    </span>
-                  </div>
-                  <h5 className="text-xs font-black text-slate-900 group-hover:text-cyan-700">
-                    AI Calibration Audit
-                  </h5>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Granular 4-dimension qualitative breakdown
-                  </p>
-                </div>
-                <span className="text-[11px] text-cyan-600 font-bold flex items-center gap-1 pt-2 border-t border-slate-200/60">
-                  <Eye className="w-3 h-3" /> View Calibration
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
@@ -5105,19 +5033,32 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
                 <span>Open Candidate Live Report (Section 10)</span>
               </button>
 
-              <button
-                onClick={() => handleAdminAnalyzeVideo(candidateVideos[0].id)}
-                disabled={analyzingVideoId === candidateVideos[0].id}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-black transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-              >
-                <Sparkles className={`w-3.5 h-3.5 ${analyzingVideoId === candidateVideos[0].id ? "animate-spin" : ""}`} />
-                <span>{analyzingVideoId === candidateVideos[0].id ? "Analyzing Video..." : "Run AI Video Analysis"}</span>
-              </button>
+              {candidateVideos && candidateVideos.length > 0 && candidateVideos[0] && (
+                <button
+                  onClick={() => handleAdminAnalyzeVideo(candidateVideos[0].id)}
+                  disabled={analyzingVideoId === candidateVideos[0].id}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-black transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${analyzingVideoId === candidateVideos[0].id ? "animate-spin" : ""}`} />
+                  <span>{analyzingVideoId === candidateVideos[0].id ? "Analyzing Video..." : "Run AI Video Analysis"}</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* List of Videos */}
-          <div className="space-y-6">
+          {candidateVideos.length === 0 ? (
+            <div className="p-8 text-center rounded-3xl bg-white border border-slate-200 space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 mx-auto flex items-center justify-center">
+                <Video className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-900">No Reflection Video Uploaded Yet</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                When the intern records or uploads their capstone keynote presentation or project defense reflection, it will appear here for faculty review and AI speech telemetry analysis.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
             {candidateVideos.map((vid, idx) => {
               const isPlaying = playingVideoIdx === idx;
               const isAnalyzingThis = analyzingVideoId === vid.id;
@@ -5308,6 +5249,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
               );
             })}
           </div>
+          )}
         </div>
       )}
 
@@ -5519,161 +5461,7 @@ export const AdminProfileEvaluationsView: React.FC<AdminProfileEvaluationsViewPr
         );
       })()}
 
-      {/* ═════════════════════════════════════════════════════════════════════════
-          MODAL 2: IN-APP REPORT PREVIEW MODAL
-          ═════════════════════════════════════════════════════════════════════════ */}
-      {previewReportType && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm overflow-y-auto p-3 sm:p-5 flex justify-center items-start pt-6 sm:pt-10 pb-10">
-          <div
-            className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150"
-            style={{ maxHeight: "calc(100vh - 4.5rem)" }}
-          >
-            {/* Modal Header */}
-            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileArchive className="w-5 h-5 text-indigo-400 shrink-0" />
-                <div className="min-w-0">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-300 block">
-                    Candidate Report Inspection
-                  </span>
-                  <h3 className="text-sm font-black text-white truncate">
-                    {previewReportType === "executive"
-                      ? `Executive Hiring Summary — ${currentStudent?.name}`
-                      : previewReportType === "resume"
-                      ? `ATS Technical Resume & Transcript — ${currentStudent?.name}`
-                      : `AI Rubric Calibration & Telemetry Audit — ${currentStudent?.name}`}
-                  </h3>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewReportType(null)}
-                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer shrink-0 ml-2"
-                title="Close Report"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Modal Content */}
-            <div
-              className="p-5 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 min-h-0"
-              style={{ maxHeight: "calc(100vh - 13rem)" }}
-            >
-              {previewReportType === "executive" && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-violet-50 border border-violet-100 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-violet-900 uppercase">Recruiter Briefing Verdict</span>
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        {formData.aiVerdict || "Ready for Placement"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-700 leading-relaxed">
-                      {formData.aiSummary || `${currentStudent?.name} demonstrates distinguished competencies in full-stack cloud systems, microservices decoupling, and automated CI/CD pipelines.`}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Candidate</span>
-                      <span className="text-xs font-black text-slate-800">{currentStudent?.name}</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Overall Rating</span>
-                      <span className="text-xs font-black text-emerald-600">{formData.overallRating || 89}% Composite</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-xs font-black uppercase text-slate-700 block">Mentor Remarks (Vijaya Kumar Mekala)</span>
-                    <p className="text-xs text-slate-600 italic bg-slate-50 p-3 rounded-xl border border-slate-200">
-                      "{formData.customNotes || "Candidate showed exceptional consistency during daily standups, high code quality, and proactive architectural problem solving."}"
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {previewReportType === "resume" && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 space-y-2">
-                    <span className="text-xs font-black text-emerald-950 uppercase block">ATS Standardized Technical Profile</span>
-                    <p className="text-xs text-slate-700">
-                      Standardized ATS resume data dynamically synced with GitHub repositories, verified capstone milestones, and faculty certifications.
-                    </p>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Education:</span>
-                      <span className="font-bold text-slate-800">{currentStudent?.college || "B.Tech Computer Science"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Fellowship Track:</span>
-                      <span className="font-bold text-slate-800">{currentStudent?.batchName || currentBatch?.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Verified Technical Artifacts:</span>
-                      <span className="font-bold text-indigo-600">{candidateResources.length} Whitepapers &amp; Blueprints</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Video Defense Duration:</span>
-                      <span className="font-bold text-emerald-600">{candidateVideos[0]?.duration || "18:42"}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {previewReportType === "audit" && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-cyan-50 border border-cyan-100 space-y-2">
-                    <span className="text-xs font-black text-cyan-950 uppercase block">4-Dimension Telemetry Calibration</span>
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                      <div className="p-2.5 bg-white rounded-xl border border-cyan-100">
-                        <span className="text-[10px] text-slate-400 font-bold block">1. Communication</span>
-                        <span className="text-sm font-black text-cyan-700">{formData.communicationScore}%</span>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-cyan-100">
-                        <span className="text-[10px] text-slate-400 font-bold block">2. Grammar &amp; Docs</span>
-                        <span className="text-sm font-black text-emerald-700">{formData.grammarScore}%</span>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-cyan-100">
-                        <span className="text-[10px] text-slate-400 font-bold block">3. Fluency Defense</span>
-                        <span className="text-sm font-black text-rose-700">{formData.fluencyScore}%</span>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-cyan-100">
-                        <span className="text-[10px] text-slate-400 font-bold block">4. Project Architecture</span>
-                        <span className="text-sm font-black text-blue-700">{formData.projectScore}%</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
-              <button
-                onClick={() => {
-                  setPreviewReportType(null);
-                  handlePreviewLiveDossier();
-                }}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black transition flex items-center gap-1.5 shadow-xs cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open Full 12-Section Live Dossier</span>
-              </button>
-
-              <button
-                onClick={() => setPreviewReportType(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
-              >
-                Close Preview
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ═════════════════════════════════════════════════════════════════════════
           MODAL: CREATE ROLE-BASED NAMED EVALUATION

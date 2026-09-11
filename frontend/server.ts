@@ -78,7 +78,20 @@ async function startServer() {
     "/api/scheduled-meetings",
     "/api/login",
     "/api/clients",
-    "/api/interview-requests"
+    "/api/interview-requests",
+    "/api/evaluations",
+    "/api/evaluation-rounds",
+    "/api/project-assignments",
+    "/api/project-submissions",
+    "/api/shift-patterns",
+    "/api/roster-assignments",
+    "/api/attendance-records",
+    "/api/punch-logs",
+    "/api/leave-requests",
+    "/api/holidays",
+    "/api/daily-activity-logs",
+    "/api/notifications",
+    "/api/intern-resources"
   ];
 
   // Dedicated Binary Media Handler: Check local frontend public media first, then stream from Django

@@ -89,28 +89,49 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
     submission: ProjectSubmission;
   } | null>(null);
 
+  // Cohort-scoped projects based on currently active batch or student role
+  const cohortProjects = useMemo(() => {
+    return projects.filter((p) => {
+      if (userRole === "student" && currentStudent?.id) {
+        const studentBatchId = currentStudent.batchId;
+        const matchesBatch = studentBatchId && p.batchId === studentBatchId;
+        const matchesDirect = Array.isArray(p.assignedStudentIds) && p.assignedStudentIds.includes(currentStudent.id);
+        return Boolean(matchesBatch || matchesDirect);
+      }
+      if (selectedBatch?.id && selectedBatch.id !== "all") {
+        return p.batchId === selectedBatch.id;
+      }
+      return true;
+    });
+  }, [projects, selectedBatch?.id, userRole, currentStudent?.id, currentStudent?.batchId]);
+
+  // Cohort-scoped submissions belonging to the cohort projects (or batch)
+  const cohortSubmissions = useMemo(() => {
+    const projectIds = new Set(cohortProjects.map((p) => p.id));
+    return submissions.filter((s) => {
+      const belongsToProject = projectIds.has(s.projectId);
+      if (userRole === "student" && currentStudent?.id) {
+        return belongsToProject && s.studentId === currentStudent.id;
+      }
+      if (selectedBatch?.id && selectedBatch.id !== "all") {
+        return belongsToProject || s.batchId === selectedBatch.id;
+      }
+      return belongsToProject;
+    });
+  }, [submissions, cohortProjects, userRole, currentStudent?.id, selectedBatch?.id]);
+
   // Extract unique technical categories for Track filter dropdown
   const availableTracks = useMemo(() => {
     const tracks = new Set<string>();
-    projects.forEach((p) => {
+    cohortProjects.forEach((p) => {
       if (p.technicalCategory) tracks.add(p.technicalCategory);
     });
     return Array.from(tracks);
-  }, [projects]);
+  }, [cohortProjects]);
 
-  // Filter projects based on batch, track, and search
+  // Filter projects based on track, and search within cohort projects
   const filteredProjects = useMemo(() => {
-    return projects.filter((p) => {
-      // Cohort check
-      if (
-        selectedBatch?.id &&
-        selectedBatch.id !== "all" &&
-        p.batchId &&
-        p.batchId !== selectedBatch.id
-      ) {
-        return false;
-      }
-
+    return cohortProjects.filter((p) => {
       // Track check
       if (selectedTrack !== "all" && p.technicalCategory !== selectedTrack) {
         return false;
@@ -119,15 +140,15 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
       // Search check
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const matchesTitle = p.title.toLowerCase().includes(query);
-        const matchesCat = p.technicalCategory.toLowerCase().includes(query);
-        const matchesSummary = p.executiveSummary.toLowerCase().includes(query);
+        const matchesTitle = (p.title || "").toLowerCase().includes(query);
+        const matchesCat = (p.technicalCategory || "").toLowerCase().includes(query);
+        const matchesSummary = (p.executiveSummary || p.description || "").toLowerCase().includes(query);
         if (!matchesTitle && !matchesCat && !matchesSummary) return false;
       }
 
       return true;
     });
-  }, [projects, selectedBatch?.id, selectedTrack, searchQuery]);
+  }, [cohortProjects, selectedTrack, searchQuery]);
 
   const getSubmissionForProject = (projectId: string) => {
     return (
@@ -463,7 +484,7 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
               onChange={(e) => setSelectedTrack(e.target.value)}
               className="pl-3.5 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none cursor-pointer shadow-2xs"
             >
-              <option value="all">All Tracks ({projects.length})</option>
+              <option value="all">All Tracks ({cohortProjects.length})</option>
               {availableTracks.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -539,7 +560,7 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
           </div>
           <div>
             <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Projects</div>
-            <div className="text-base font-black text-slate-900 leading-tight">{projects.length}</div>
+            <div className="text-base font-black text-slate-900 leading-tight">{cohortProjects.length}</div>
           </div>
         </div>
 
@@ -549,7 +570,7 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
           </div>
           <div>
             <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Deliverables Submitted</div>
-            <div className="text-base font-black text-slate-900 leading-tight">{submissions.length}</div>
+            <div className="text-base font-black text-slate-900 leading-tight">{cohortSubmissions.length}</div>
           </div>
         </div>
 
@@ -560,7 +581,7 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
           <div>
             <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Awaiting Review</div>
             <div className="text-base font-black text-amber-600 leading-tight">
-              {submissions.filter((s) => s.status === "pending").length}
+              {cohortSubmissions.filter((s) => s.status === "pending" || s.status === "in_review").length}
             </div>
           </div>
         </div>
@@ -572,7 +593,7 @@ export const AssignedProjectsKanbanView: React.FC<AssignedProjectsKanbanViewProp
           <div>
             <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Graded & Passed</div>
             <div className="text-base font-black text-emerald-600 leading-tight">
-              {submissions.filter((s) => s.status === "passed").length}
+              {cohortSubmissions.filter((s) => s.status === "passed").length}
             </div>
           </div>
         </div>

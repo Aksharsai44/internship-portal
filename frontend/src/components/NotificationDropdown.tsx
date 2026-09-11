@@ -20,6 +20,7 @@ interface NotificationDropdownProps {
   onClose: () => void;
   notifications: AppNotification[];
   onMarkAsRead: (id: string) => void;
+  onClearNotification?: (id: string) => void;
   onMarkAllAsRead: () => void;
   onClearAll: () => void;
   onNotificationClick: (notif: AppNotification) => void;
@@ -32,6 +33,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
   onClose,
   notifications,
   onMarkAsRead,
+  onClearNotification,
   onMarkAllAsRead,
   onClearAll,
   onNotificationClick,
@@ -54,10 +56,14 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
 
   const getRelativeTime = (timestamp: string) => {
     try {
-      const now = new Date("2026-09-07T01:15:00.000Z").getTime();
+      if (!timestamp) return "Just now";
+      const now = Date.now();
       const notifTime = new Date(timestamp).getTime();
-      const diffMinutes = Math.max(1, Math.floor((now - notifTime) / (1000 * 60)));
+      if (isNaN(notifTime)) return "Recently";
+      const diffSeconds = Math.max(0, Math.floor((now - notifTime) / 1000));
 
+      if (diffSeconds < 60) return "Just now";
+      const diffMinutes = Math.floor(diffSeconds / 60);
       if (diffMinutes < 60) return `${diffMinutes}m ago`;
       const diffHours = Math.floor(diffMinutes / 60);
       if (diffHours < 24) return `${diffHours}h ago`;
@@ -155,9 +161,10 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                 <button
                   type="button"
                   onClick={onMarkAllAsRead}
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-indigo-50 transition cursor-pointer"
+                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50/70 hover:bg-indigo-100 transition cursor-pointer"
+                  title="Mark all as read & clear"
                 >
-                  <Check className="w-3 h-3" />
+                  <Check className="w-3.5 h-3.5" />
                   <span>Mark read</span>
                 </button>
               )}
@@ -227,16 +234,33 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                       >
                         {notif.title}
                       </h5>
-                      <span className="text-[10px] text-slate-400 font-medium shrink-0">
-                        {getRelativeTime(notif.timestamp)}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {getRelativeTime(notif.timestamp)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onClearNotification) {
+                              onClearNotification(notif.id);
+                            } else {
+                              onMarkAsRead(notif.id);
+                            }
+                          }}
+                          className="w-5 h-5 rounded-md flex items-center justify-center text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                          title="Dismiss notification"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
 
                     <p className="text-[11px] text-slate-600 leading-snug line-clamp-2 font-medium">
                       {notif.message}
                     </p>
 
-                    <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center justify-between pt-1.5">
                       {notif.actionTab ? (
                         <span className="text-[10px] font-bold text-indigo-600 group-hover:underline flex items-center gap-1">
                           <span>View Details</span>
@@ -246,9 +270,23 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                         <span />
                       )}
 
-                      {!notif.isRead && (
-                        <span className="w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-indigo-200" />
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkAsRead(notif.id);
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                          title="Mark read & clear"
+                        >
+                          <Check className="w-3 h-3" />
+                          <span>Clear</span>
+                        </button>
+                        {!notif.isRead && (
+                          <span className="w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-indigo-200" />
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

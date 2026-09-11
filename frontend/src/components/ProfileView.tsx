@@ -98,10 +98,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [branch, setBranch] = useState(currentStudent?.branch || "");
   const [city, setCity] = useState(currentStudent?.city || "");
   const [stateValue, setStateValue] = useState(currentStudent?.state || "");
-  const [bio, setBio] = useState(
-    currentStudent?.bio ||
-      "Passionate developer exploring autonomous AI orchestration, modern full-stack web architectures, and high-performance algorithms."
-  );
+  const [bio, setBio] = useState(currentStudent?.bio || "");
   const [githubUrl, setGithubUrl] = useState(currentStudent?.githubUrl || "");
   const [linkedinUrl, setLinkedinUrl] = useState(currentStudent?.linkedinUrl || "");
   const [avatar, setAvatar] = useState(
@@ -175,7 +172,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setBranch(currentStudent.branch || "");
       setCity(currentStudent.city || "");
       setStateValue(currentStudent.state || "");
-      if (currentStudent.bio) setBio(currentStudent.bio);
+      setBio(currentStudent.bio || "");
       setGithubUrl(currentStudent.githubUrl || "");
       setLinkedinUrl(currentStudent.linkedinUrl || "");
       if (currentStudent.avatar) setAvatar(currentStudent.avatar);
@@ -882,7 +879,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <Target className="w-4 h-4 text-emerald-600" />
                     </div>
                     <div className="text-2xl font-black text-slate-900">
-                      {currentStudent.scores?.overallAccuracy || 94.2}%
+                      {currentStudent.scores?.overallAccuracy ?? 0}%
                     </div>
                     <span className="text-[11px] text-slate-500 mt-1 block">
                       Across all cohort challenges
@@ -897,7 +894,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <Clock className="w-4 h-4 text-sky-600" />
                     </div>
                     <div className="text-2xl font-black text-slate-900">
-                      {currentStudent.fastestResponseMs || 240}{" "}
+                      {currentStudent.fastestResponseMs ?? 0}{" "}
                       <span className="text-xs text-sky-600 font-bold">ms</span>
                     </div>
                     <span className="text-[11px] text-slate-500 mt-1 block">
@@ -912,8 +909,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">
                   About Me / Developer Bio
                 </span>
-                <p className="text-xs sm:text-sm text-slate-700 italic leading-relaxed">
-                  "{bio}"
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
+                  {bio ? (
+                    <span className="italic">"{bio}"</span>
+                  ) : (
+                    <span className="text-slate-400 italic">No developer bio provided yet. Click "Edit Profile" above to describe your technical expertise, career goals, and project experience.</span>
+                  )}
                 </p>
                 {(githubUrl || linkedinUrl) && (
                   <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-200/60">
@@ -953,19 +954,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     <div className="flex justify-between items-center py-1">
                       <span className="text-slate-500">Enrolled Batch</span>
                       <span className="font-bold text-slate-900">
-                        {currentStudent?.batchName || "AI Automation"}
+                        {currentStudent?.batchName || "Unassigned Cohort"}
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-1">
                       <span className="text-slate-500">College / Institution</span>
                       <span className="font-bold text-slate-900">
-                        {currentStudent?.college || "Mind2i Institute of Technology"}
+                        {currentStudent?.college || "Not specified"}
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-1">
                       <span className="text-slate-500">Department / Branch</span>
                       <span className="font-bold text-slate-900">
-                        {currentStudent?.branch || "Computer Science & Engineering"}
+                        {currentStudent?.branch || "Not specified"}
                       </span>
                     </div>
                     <div className="flex justify-between items-center py-1">

@@ -3,7 +3,7 @@ import { ProjectAssignment, ProjectSubmission } from "../types";
 export const INITIAL_PROJECT_ASSIGNMENTS: ProjectAssignment[] = [
   {
     id: "proj_01",
-    batchId: "all",
+    batchId: "batch_demo_uiux",
     batchName: "Summer 2026 UI/UX & Product Design",
     title: "Implement Interactive Data Visualization Dashboard",
     technicalCategory: "Frontend (React, Tailwind, State)",
@@ -45,7 +45,7 @@ export const INITIAL_PROJECT_ASSIGNMENTS: ProjectAssignment[] = [
   },
   {
     id: "proj_02",
-    batchId: "all",
+    batchId: "batch_demo_uiux",
     batchName: "Summer 2026 UI/UX & Product Design",
     title: "Build Enterprise Design System & Figma Token Bridge",
     technicalCategory: "UI/UX",
@@ -86,7 +86,7 @@ export const INITIAL_PROJECT_ASSIGNMENTS: ProjectAssignment[] = [
   },
   {
     id: "proj_03",
-    batchId: "all",
+    batchId: "batch_demo_ai",
     batchName: "Full-Stack AI Engineering",
     title: "Containerized Microservice & API Rate Limiting",
     technicalCategory: "DevOps",
@@ -127,7 +127,7 @@ export const INITIAL_PROJECT_ASSIGNMENTS: ProjectAssignment[] = [
   },
   {
     id: "proj_04",
-    batchId: "all",
+    batchId: "batch_demo_ai",
     batchName: "Full-Stack AI Engineering",
     title: "AI Summary Extraction Pipeline with Gemini SDK",
     technicalCategory: "AI & Algorithms",
@@ -161,7 +161,7 @@ export const INITIAL_PROJECT_ASSIGNMENTS: ProjectAssignment[] = [
   },
   {
     id: "proj_05",
-    batchId: "all",
+    batchId: "batch_demo_uiux",
     batchName: "Summer 2026 UI/UX & Product Design",
     title: "Accessibility Audit & Screen Reader Polish",
     technicalCategory: "UI/UX",

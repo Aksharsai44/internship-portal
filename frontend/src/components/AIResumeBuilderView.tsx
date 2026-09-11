@@ -5,6 +5,7 @@ import {
   ResumeBulletFix,
   isDemoStudent,
 } from "../types";
+import { createEmptyResumeData } from "../data/mockResumeData";
 import {
   Sparkles,
   ShieldCheck,
@@ -51,44 +52,89 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
   onToast,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<"scorecard" | "editor" | "preview">("scorecard");
-  const targetRole = resumeData.targetRole || "Generative AI & LLM";
+  const targetRole = resumeData?.targetRole || "Generative AI & LLM";
   const [selectedTemplate, setSelectedTemplate] = useState<"faang" | "executive" | "minimal">("faang");
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
 
   // Sync state if student changes
   const effectiveResume = useMemo(() => {
-    const studentName = currentStudent?.name || resumeData.internName || "Candidate";
+    const baseEmpty = createEmptyResumeData(currentStudent);
+    const studentName = currentStudent?.name || resumeData?.internName || baseEmpty.internName;
     const isDemo = isDemoStudent(currentStudent);
     const cleanFileName = `${studentName.replace(/\s+/g, "_")}_Resume.pdf`;
+
+    const rawScorecard = resumeData?.scorecard || {};
+    const safeMatchedSkills = Array.isArray(rawScorecard.matchedSkills)
+      ? rawScorecard.matchedSkills
+      : (isDemo ? ["Python", "FastAPI", "PostgreSQL", "Docker", "Git"] : []);
+    const safeMissingSkills = Array.isArray(rawScorecard.missingSkills)
+      ? rawScorecard.missingSkills
+      : (isDemo ? ["Kubernetes", "Redis", "Kafka"] : []);
+    const safeBulletFixes = Array.isArray(rawScorecard.bulletFixes)
+      ? rawScorecard.bulletFixes
+      : [];
+    const safeVerificationChecklist = Array.isArray(rawScorecard.verificationChecklist) && rawScorecard.verificationChecklist.length > 0
+      ? rawScorecard.verificationChecklist
+      : [
+          { id: "v1", label: "Single-column linear parse structure (standard ATS compliant)", passed: true },
+          { id: "v2", label: "Standard headings: Summary, Experience, Education, Skills", passed: true },
+          { id: "v3", label: "No tables, text boxes, or embedded image graphics in body text", passed: true },
+          { id: "v4", label: "Machine-readable fonts & bullet character sets", passed: true },
+          { id: "v5", label: "Contact information prominently formatted in document header", passed: true },
+        ];
+
     return {
+      ...baseEmpty,
       ...resumeData,
+      internId: currentStudent?.id || resumeData?.internId || baseEmpty.internId,
       internName: studentName,
-      email: currentStudent?.email || resumeData.email || (isDemo ? `${studentName.toLowerCase().replace(/\s+/g, ".")}@mind2i.edu` : ""),
-      mobile: currentStudent?.mobile || resumeData.mobile || (isDemo ? "+91 98765 43210" : ""),
-      location: currentStudent?.city ? `${currentStudent.city}, ${currentStudent.state || ""}` : (currentStudent?.college || resumeData.location || ""),
-      githubUrl: currentStudent?.githubUrl || (resumeData.githubUrl && !resumeData.githubUrl.includes("aksharsai") && !resumeData.githubUrl.includes("candidate") ? resumeData.githubUrl : (isDemo ? `github.com/${studentName.toLowerCase().replace(/\s+/g, "")}` : "")),
-      linkedinUrl: currentStudent?.linkedinUrl || (resumeData.linkedinUrl && !resumeData.linkedinUrl.includes("aksharsai") && !resumeData.linkedinUrl.includes("candidate") ? resumeData.linkedinUrl : (isDemo ? `linkedin.com/in/${studentName.toLowerCase().replace(/\s+/g, "")}` : "")),
+      email: currentStudent?.email || resumeData?.email || (isDemo ? `${studentName.toLowerCase().replace(/\s+/g, ".")}@mind2i.edu` : ""),
+      mobile: currentStudent?.mobile || resumeData?.mobile || (isDemo ? "+91 98765 43210" : ""),
+      location: currentStudent?.city ? `${currentStudent.city}, ${currentStudent.state || ""}` : (currentStudent?.college || resumeData?.location || ""),
+      githubUrl: currentStudent?.githubUrl || (resumeData?.githubUrl && !resumeData.githubUrl.includes("aksharsai") && !resumeData.githubUrl.includes("candidate") ? resumeData.githubUrl : (isDemo ? `github.com/${studentName.toLowerCase().replace(/\s+/g, "")}` : "")),
+      linkedinUrl: currentStudent?.linkedinUrl || (resumeData?.linkedinUrl && !resumeData.linkedinUrl.includes("aksharsai") && !resumeData.linkedinUrl.includes("candidate") ? resumeData.linkedinUrl : (isDemo ? `linkedin.com/in/${studentName.toLowerCase().replace(/\s+/g, "")}` : "")),
+      targetRole: resumeData?.targetRole || baseEmpty.targetRole,
+      professionalSummary: resumeData?.professionalSummary || baseEmpty.professionalSummary,
+      education: Array.isArray(resumeData?.education) && resumeData.education.length > 0 ? resumeData.education : baseEmpty.education,
+      experience: Array.isArray(resumeData?.experience) ? resumeData.experience : baseEmpty.experience,
+      skills: Array.isArray(resumeData?.skills) && resumeData.skills.length > 0 ? resumeData.skills : (currentStudent?.skills || baseEmpty.skills),
+      certifications: Array.isArray(resumeData?.certifications) ? resumeData.certifications : baseEmpty.certifications,
+      projects: Array.isArray(resumeData?.projects) ? resumeData.projects : (baseEmpty.projects || []),
       scorecard: {
-        ...resumeData.scorecard,
-        lastScannedFileName: resumeData.scorecard?.lastScannedFileName && resumeData.scorecard.lastScannedFileName !== "None" ? resumeData.scorecard.lastScannedFileName : (isDemo ? cleanFileName : "None"),
-        executiveSummary: resumeData.scorecard?.executiveSummary && !resumeData.scorecard.executiveSummary.includes("No resume document uploaded yet")
-          ? resumeData.scorecard.executiveSummary
+        overallScore: typeof rawScorecard.overallScore === "number" ? rawScorecard.overallScore : (isDemo ? 88 : 0),
+        targetRole: rawScorecard.targetRole || resumeData?.targetRole || "Software Engineering Intern",
+        grade: rawScorecard.grade || (rawScorecard.overallScore ? "ATS Scored" : "Pending Resume Upload"),
+        lastScannedFileName: rawScorecard.lastScannedFileName && rawScorecard.lastScannedFileName !== "None" ? rawScorecard.lastScannedFileName : (isDemo ? cleanFileName : "None"),
+        lastScannedDate: rawScorecard.lastScannedDate || "N/A",
+        keywordMatchRate: typeof rawScorecard.keywordMatchRate === "number" ? rawScorecard.keywordMatchRate : (isDemo ? 80 : 0),
+        matchedSkills: safeMatchedSkills,
+        missingSkills: safeMissingSkills,
+        quantifiedMetricsScore: typeof rawScorecard.quantifiedMetricsScore === "number" ? rawScorecard.quantifiedMetricsScore : (isDemo ? 85 : 0),
+        quantifiedMetricsDetail: rawScorecard.quantifiedMetricsDetail || "Upload your resume in Resume Builder to scan ATS metrics.",
+        formattingScore: typeof rawScorecard.formattingScore === "number" ? rawScorecard.formattingScore : (isDemo ? 95 : 0),
+        formattingDetail: rawScorecard.formattingDetail || "Pending document upload.",
+        grammarScore: typeof rawScorecard.grammarScore === "number" ? rawScorecard.grammarScore : (isDemo ? 90 : 0),
+        grammarDetail: rawScorecard.grammarDetail || "Pending document upload.",
+        bulletFixes: safeBulletFixes,
+        verificationChecklist: safeVerificationChecklist,
+        executiveSummary: rawScorecard.executiveSummary && !rawScorecard.executiveSummary.includes("No resume document uploaded yet")
+          ? rawScorecard.executiveSummary
           : (isDemo
               ? `Analysis of ${studentName}'s resume indicates strong technical depth in Generative AI architectures, real-time asynchronous streaming, and distributed microservices. Quantified project achievements position ${studentName} in the top quartile of automated ATS screens for modern AI and Full-Stack engineering roles.`
-              : (resumeData.scorecard?.executiveSummary || "No resume document uploaded yet. Upload a PDF or Word document in Resume Builder to generate real-time ATS analysis.")),
+              : (rawScorecard.executiveSummary || "No resume document uploaded yet. Upload a PDF or Word document in Resume Builder to generate real-time ATS analysis.")),
       },
     };
   }, [resumeData, currentStudent]);
 
   // Handle Apply AI Fix
   const handleApplyAIFix = (fixId: string) => {
-    const fix = effectiveResume.scorecard.bulletFixes.find((f) => f.id === fixId);
+    const fix = (effectiveResume.scorecard?.bulletFixes || []).find((f) => f.id === fixId);
     if (!fix || fix.applied) return;
 
     // 1. Update bullet in experience
-    const updatedExperience = effectiveResume.experience.map((exp) => {
-      const idx = exp.bullets.findIndex((b) => b.trim() === fix.originalText.trim());
+    const updatedExperience = (effectiveResume.experience || []).map((exp) => {
+      const idx = (exp.bullets || []).findIndex((b) => b.trim() === fix.originalText.trim());
       if (idx !== -1) {
         const newBullets = [...exp.bullets];
         newBullets[idx] = fix.suggestedText;
@@ -98,12 +144,12 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
     });
 
     // 2. Mark fix as applied and bump score
-    const updatedFixes = effectiveResume.scorecard.bulletFixes.map((f) =>
+    const updatedFixes = (effectiveResume.scorecard?.bulletFixes || []).map((f) =>
       f.id === fixId ? { ...f, applied: true } : f
     );
 
-    const newScore = Math.min(98, effectiveResume.scorecard.overallScore + 4);
-    const newMetricsScore = Math.min(100, effectiveResume.scorecard.quantifiedMetricsScore + 5);
+    const newScore = Math.min(98, (effectiveResume.scorecard?.overallScore || 0) + 4);
+    const newMetricsScore = Math.min(100, (effectiveResume.scorecard?.quantifiedMetricsScore || 0) + 5);
 
     const updatedData: InternResumeData = {
       ...effectiveResume,
@@ -113,7 +159,7 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
         overallScore: newScore,
         quantifiedMetricsScore: newMetricsScore,
         bulletFixes: updatedFixes,
-        grammarScore: Math.min(100, effectiveResume.scorecard.grammarScore + 6),
+        grammarScore: Math.min(100, (effectiveResume.scorecard?.grammarScore || 0) + 6),
       },
       isSyncedToClientPortal: true,
       lastSyncedAt: new Date().toISOString(),
@@ -125,13 +171,13 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
 
   // Handle Add Missing Skill
   const handleAddMissingSkill = (skill: string) => {
-    if (effectiveResume.skills.includes(skill)) return;
+    if ((effectiveResume.skills || []).includes(skill)) return;
 
-    const newSkills = [...effectiveResume.skills, skill];
-    const newMissing = effectiveResume.scorecard.missingSkills.filter((s) => s !== skill);
-    const newMatched = [...effectiveResume.scorecard.matchedSkills, skill];
-    const newMatchRate = Math.min(100, Math.round((newMatched.length / (newMatched.length + newMissing.length)) * 100));
-    const newScore = Math.min(99, effectiveResume.scorecard.overallScore + 2);
+    const newSkills = [...(effectiveResume.skills || []), skill];
+    const newMissing = (effectiveResume.scorecard?.missingSkills || []).filter((s) => s !== skill);
+    const newMatched = [...(effectiveResume.scorecard?.matchedSkills || []), skill];
+    const newMatchRate = Math.min(100, Math.round((newMatched.length / (newMatched.length + newMissing.length || 1)) * 100));
+    const newScore = Math.min(99, (effectiveResume.scorecard?.overallScore || 0) + 2);
 
     const updatedData: InternResumeData = {
       ...effectiveResume,
@@ -350,14 +396,14 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
                 </div>
 
                 <p className="text-xs text-slate-600 mb-3">
-                  Matched {effectiveResume.scorecard.matchedSkills.length} of{" "}
-                  {effectiveResume.scorecard.matchedSkills.length + effectiveResume.scorecard.missingSkills.length}{" "}
+                  Matched {(effectiveResume.scorecard?.matchedSkills || []).length} of{" "}
+                  {(effectiveResume.scorecard?.matchedSkills || []).length + (effectiveResume.scorecard?.missingSkills || []).length}{" "}
                   critical skills for {targetRole.split(" ")[0]}.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
-                {effectiveResume.scorecard.matchedSkills.slice(0, 4).map((skill, i) => (
+                {(effectiveResume.scorecard?.matchedSkills || []).slice(0, 4).map((skill, i) => (
                   <span
                     key={i}
                     className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-[10.5px] flex items-center gap-1"
@@ -456,7 +502,7 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
                 </div>
 
                 <p className="text-xs text-slate-600 mb-3">
-                  {effectiveResume.scorecard.bulletFixes.filter((f) => !f.applied).length} verb improvement suggestions found.
+                  {(effectiveResume.scorecard?.bulletFixes || []).filter((f) => !f.applied).length} verb improvement suggestions found.
                 </p>
               </div>
 
@@ -487,59 +533,67 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
 
             {/* Side-by-side Suggestion Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {effectiveResume.scorecard.bulletFixes.map((fix) => (
-                <div
-                  key={fix.id}
-                  className="bg-white rounded-2xl p-4 sm:p-5 border border-amber-200/80 shadow-xs flex flex-col justify-between space-y-3.5"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-black tracking-wider text-[10px] uppercase">
-                        {fix.scopeTag}
-                      </span>
-                      <span className="text-slate-400 font-medium">{fix.category}</span>
-                    </div>
-
-                    {/* Strikethrough Original Text */}
-                    <div className="text-xs text-rose-600 line-through leading-relaxed font-medium">
-                      "{fix.originalText}"
-                    </div>
-
-                    {/* Green Suggested Replacement */}
-                    <div className="text-xs text-emerald-700 font-bold leading-relaxed">
-                      → "{fix.suggestedText}"
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 italic">
-                      {fix.impactReason}
-                    </p>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => handleApplyAIFix(fix.id)}
-                      disabled={fix.applied}
-                      className={`w-full py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        fix.applied
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
-                          : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs shadow-indigo-500/20"
-                      }`}
-                    >
-                      {fix.applied ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Applied to Resume</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>Apply AI Fix</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+              {(effectiveResume.scorecard?.bulletFixes || []).length === 0 ? (
+                <div className="col-span-full bg-white/80 rounded-2xl p-6 text-center border border-amber-200/60">
+                  <p className="text-xs text-slate-500 font-medium">
+                    Upload your resume document or click "Run AI Deep ATS Audit" above to analyze action verbs and generate quantified bullet optimizations.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                (effectiveResume.scorecard?.bulletFixes || []).map((fix) => (
+                  <div
+                    key={fix.id}
+                    className="bg-white rounded-2xl p-4 sm:p-5 border border-amber-200/80 shadow-xs flex flex-col justify-between space-y-3.5"
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-black tracking-wider text-[10px] uppercase">
+                          {fix.scopeTag}
+                        </span>
+                        <span className="text-slate-400 font-medium">{fix.category}</span>
+                      </div>
+
+                      {/* Strikethrough Original Text */}
+                      <div className="text-xs text-rose-600 line-through leading-relaxed font-medium">
+                        "{fix.originalText}"
+                      </div>
+
+                      {/* Green Suggested Replacement */}
+                      <div className="text-xs text-emerald-700 font-bold leading-relaxed">
+                        → "{fix.suggestedText}"
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 italic">
+                        {fix.impactReason}
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => handleApplyAIFix(fix.id)}
+                        disabled={fix.applied}
+                        className={`w-full py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          fix.applied
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
+                            : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs shadow-indigo-500/20"
+                        }`}
+                      >
+                        {fix.applied ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Applied to Resume</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Apply AI Fix</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -566,16 +620,20 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
               </p>
 
               <div className="flex flex-wrap gap-2 pt-1">
-                {effectiveResume.scorecard.missingSkills.map((skill, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleAddMissingSkill(skill)}
-                    className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs group"
-                  >
-                    <Plus className="w-3.5 h-3.5 group-hover:scale-125 transition-transform" />
-                    <span>{skill}</span>
-                  </button>
-                ))}
+                {(effectiveResume.scorecard?.missingSkills || []).length === 0 ? (
+                  <span className="text-xs text-slate-400 italic">No missing critical skills identified. Strong technical keyword alignment!</span>
+                ) : (
+                  (effectiveResume.scorecard?.missingSkills || []).map((skill, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleAddMissingSkill(skill)}
+                      className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs group"
+                    >
+                      <Plus className="w-3.5 h-3.5 group-hover:scale-125 transition-transform" />
+                      <span>{skill}</span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
 
@@ -596,7 +654,7 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
               </div>
 
               <div className="space-y-2.5">
-                {effectiveResume.scorecard.verificationChecklist.map((item) => (
+                {(effectiveResume.scorecard?.verificationChecklist || []).map((item) => (
                   <div key={item.id} className="flex items-start gap-2.5 text-xs text-slate-700 font-medium">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     <span>{item.label}</span>
@@ -839,7 +897,7 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
               </h3>
               <div className="text-xs text-slate-700 leading-relaxed">
                 <span className="font-bold text-slate-900">Core Engineering: </span>
-                {effectiveResume.skills.join(" • ")}
+                {(effectiveResume.skills || []).length > 0 ? (effectiveResume.skills || []).join(" • ") : "Skills pending verification"}
               </div>
             </div>
 
@@ -849,23 +907,27 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
                 Professional Experience
               </h3>
 
-              {effectiveResume.experience.map((exp) => (
-                <div key={exp.id} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-bold text-slate-900">
-                      {exp.title} — <span className="text-indigo-600">{exp.company}</span>
-                    </span>
-                    <span className="text-[11px] text-slate-500 font-mono">{exp.period}</span>
+              {(effectiveResume.experience || []).length === 0 ? (
+                <p className="text-xs text-slate-400 italic">No prior experience added yet. Intern can add verified experience in the Editor tab.</p>
+              ) : (
+                (effectiveResume.experience || []).map((exp) => (
+                  <div key={exp.id} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="font-bold text-slate-900">
+                        {exp.title} — <span className="text-indigo-600">{exp.company}</span>
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-mono">{exp.period}</span>
+                    </div>
+                    <ul className="list-disc list-inside text-xs text-slate-600 space-y-1 pl-1">
+                      {(exp.bullets || []).map((b, i) => (
+                        <li key={i} className="leading-relaxed">
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <ul className="list-disc list-inside text-xs text-slate-600 space-y-1 pl-1">
-                    {exp.bullets.map((b, i) => (
-                      <li key={i} className="leading-relaxed">
-                        {b}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             {/* Education */}
@@ -873,15 +935,19 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
               <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-1">
                 Education & Academics
               </h3>
-              {effectiveResume.education.map((edu) => (
-                <div key={edu.id} className="text-xs flex justify-between">
-                  <div>
-                    <div className="font-bold text-slate-900">{edu.degree}</div>
-                    <div className="text-slate-500 text-[11px]">{edu.institution} {edu.grade ? `• ${edu.grade}` : ""}</div>
+              {(effectiveResume.education || []).length === 0 ? (
+                <p className="text-xs text-slate-400 italic">No education records added yet.</p>
+              ) : (
+                (effectiveResume.education || []).map((edu) => (
+                  <div key={edu.id} className="text-xs flex justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900">{edu.degree}</div>
+                      <div className="text-slate-500 text-[11px]">{edu.institution} {edu.grade ? `• ${edu.grade}` : ""}</div>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono">{edu.period}</span>
                   </div>
-                  <span className="text-[11px] text-slate-400 font-mono">{edu.period}</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             {/* Certifications */}
@@ -890,7 +956,9 @@ export const AIResumeBuilderView: React.FC<AIResumeBuilderViewProps> = ({
                 Verified Certifications
               </h3>
               <div className="text-xs text-slate-700 leading-relaxed">
-                {effectiveResume.certifications.join(" • ")}
+                {(effectiveResume.certifications || []).length > 0
+                  ? (effectiveResume.certifications || []).join(" • ")
+                  : "Certifications in progress during cohort fellowship"}
               </div>
             </div>
           </div>

@@ -611,6 +611,24 @@ class ProjectAssignmentSerializer(serializers.ModelSerializer):
             'id': {'validators': []},
         }
 
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if not ret.get('technicalCategory'):
+            ret['technicalCategory'] = ret.get('category') or "AI Engineering"
+        if not ret.get('category'):
+            ret['category'] = ret.get('technicalCategory') or "AI Engineering"
+        if not ret.get('executiveSummary'):
+            ret['executiveSummary'] = ret.get('description') or ""
+        if not ret.get('description'):
+            ret['description'] = ret.get('executiveSummary') or ""
+        if not ret.get('leaderboardPoints'):
+            ret['leaderboardPoints'] = ret.get('points') or 100
+        if not ret.get('points'):
+            ret['points'] = ret.get('leaderboardPoints') or 100
+        if not ret.get('batchId') and instance.batch_id:
+            ret['batchId'] = instance.batch_id
+        return ret
+
     def create(self, validated_data):
         p_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"proj_{int(time.time()*1000)}"
         batch_val = validated_data.get('batch') or self.initial_data.get('batch') or self.initial_data.get('batchId')
@@ -619,6 +637,22 @@ class ProjectAssignmentSerializer(serializers.ModelSerializer):
                 validated_data['batch'] = Batch.objects.get(id=str(batch_val))
             except Exception:
                 pass
+        for field in ['technicalCategory', 'executiveSummary', 'detailedInstructions', 'priority', 'resources', 'mentorObservationBenchmark', 'leaderboardPoints', 'batchName']:
+            if field in self.initial_data and field not in validated_data:
+                validated_data[field] = self.initial_data[field]
+        if 'technicalCategory' in validated_data and not validated_data.get('category'):
+            validated_data['category'] = validated_data['technicalCategory']
+        elif 'category' in validated_data and not validated_data.get('technicalCategory'):
+            validated_data['technicalCategory'] = validated_data['category']
+        if 'executiveSummary' in validated_data and not validated_data.get('description'):
+            validated_data['description'] = validated_data['executiveSummary']
+        elif 'description' in validated_data and not validated_data.get('executiveSummary'):
+            validated_data['executiveSummary'] = validated_data['description']
+        if 'leaderboardPoints' in validated_data and not validated_data.get('points'):
+            validated_data['points'] = validated_data['leaderboardPoints']
+        elif 'points' in validated_data and not validated_data.get('leaderboardPoints'):
+            validated_data['leaderboardPoints'] = validated_data['points']
+
         instance, _ = ProjectAssignment.objects.update_or_create(
             id=p_id,
             defaults=validated_data
@@ -636,6 +670,24 @@ class ProjectSubmissionSerializer(serializers.ModelSerializer):
             'id': {'validators': []},
         }
 
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if not ret.get('githubRepoUrl'):
+            ret['githubRepoUrl'] = ret.get('githubUrl') or ""
+        if not ret.get('githubUrl'):
+            ret['githubUrl'] = ret.get('githubRepoUrl') or ""
+        if not ret.get('submissionNotes'):
+            ret['submissionNotes'] = ret.get('notes') or ""
+        if not ret.get('notes'):
+            ret['notes'] = ret.get('submissionNotes') or ""
+        if not ret.get('mentorFeedback'):
+            ret['mentorFeedback'] = ret.get('feedback') or ""
+        if not ret.get('feedback'):
+            ret['feedback'] = ret.get('mentorFeedback') or ""
+        if not ret.get('studentId') and instance.student_id:
+            ret['studentId'] = instance.student_id
+        return ret
+
     def create(self, validated_data):
         sub_id = validated_data.pop('id', None) or self.initial_data.get('id') or f"sub_{int(time.time()*1000)}"
         student_val = validated_data.get('student') or self.initial_data.get('student') or self.initial_data.get('studentId')
@@ -644,6 +696,22 @@ class ProjectSubmissionSerializer(serializers.ModelSerializer):
                 validated_data['student'] = Student.objects.get(id=str(student_val))
             except Exception:
                 pass
+        for field in ['githubRepoUrl', 'fileName', 'fileSize', 'demoVideoUrl', 'demoVideoName', 'submissionNotes', 'gradePoints', 'mentorFeedback']:
+            if field in self.initial_data and field not in validated_data:
+                validated_data[field] = self.initial_data[field]
+        if 'githubRepoUrl' in validated_data and not validated_data.get('githubUrl'):
+            validated_data['githubUrl'] = validated_data['githubRepoUrl']
+        elif 'githubUrl' in validated_data and not validated_data.get('githubRepoUrl'):
+            validated_data['githubRepoUrl'] = validated_data['githubUrl']
+        if 'submissionNotes' in validated_data and not validated_data.get('notes'):
+            validated_data['notes'] = validated_data['submissionNotes']
+        elif 'notes' in validated_data and not validated_data.get('submissionNotes'):
+            validated_data['submissionNotes'] = validated_data['notes']
+        if 'mentorFeedback' in validated_data and not validated_data.get('feedback'):
+            validated_data['feedback'] = validated_data['mentorFeedback']
+        elif 'feedback' in validated_data and not validated_data.get('mentorFeedback'):
+            validated_data['mentorFeedback'] = validated_data['feedback']
+
         instance, _ = ProjectSubmission.objects.update_or_create(
             id=sub_id,
             defaults=validated_data
@@ -724,7 +792,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         model = LeaveRequest
         fields = '__all__'
         extra_kwargs = {
-            'id': {'validators': []},
+            'id': {'validators': [], 'required': False},
         }
 
     def create(self, validated_data):
@@ -741,7 +809,7 @@ class HolidayEventSerializer(serializers.ModelSerializer):
         model = HolidayEvent
         fields = '__all__'
         extra_kwargs = {
-            'id': {'validators': []},
+            'id': {'validators': [], 'required': False},
         }
 
     def create(self, validated_data):
@@ -758,7 +826,7 @@ class DailyActivityLogSerializer(serializers.ModelSerializer):
         model = DailyActivityLog
         fields = '__all__'
         extra_kwargs = {
-            'id': {'validators': []},
+            'id': {'validators': [], 'required': False},
         }
 
     def create(self, validated_data):

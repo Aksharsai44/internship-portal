@@ -70,10 +70,10 @@ export function downloadResumePdf(
     ? resumeData.education
     : [
         {
-          degree: student?.branch ? `B.Tech in ${student.branch}` : "B.Tech in Computer Science & Engineering",
-          institution: student?.college || "Mind2i Institute of Technology",
+          degree: student?.branch ? `B.Tech in ${student.branch}` : "Bachelor of Technology",
+          institution: student?.college || "University / Institute",
           period: "2021 - 2025",
-          grade: "First Class with Distinction",
+          grade: "Candidate in good standing",
           highlights: "Focus on Distributed Systems, Cloud Architecture & Machine Learning",
         },
         {

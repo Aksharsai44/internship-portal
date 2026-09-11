@@ -27,10 +27,7 @@ import {
   InternResource,
   isDemoStudent,
 } from "./types";
-import {
-  INITIAL_PROJECT_ASSIGNMENTS,
-  INITIAL_PROJECT_SUBMISSIONS,
-} from "./data/mockProjects";
+
 import {
   INITIAL_SHIFT_PATTERNS,
   INITIAL_ROSTER_ASSIGNMENTS,
@@ -798,26 +795,42 @@ export default function App() {
   }, [userNotifications]);
 
   const handleMarkNotificationAsRead = (notifId: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notifId ? { ...n, isRead: true } : n))
-    );
-    axios.post(`/api/notifications/${notifId}/mark_read/`).catch(() => {});
+    setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+    showToastNotification("Notification cleared.");
+    axios.delete(`/api/notifications/${notifId}/`).catch(() => {
+      axios.post(`/api/notifications/${notifId}/mark_read/`).catch(() => {});
+    });
+  };
+
+  const handleClearNotification = (notifId: string) => {
+    handleMarkNotificationAsRead(notifId);
   };
 
   const handleMarkAllNotificationsAsRead = () => {
-    const userNotifIds = new Set(userNotifications.map((n) => n.id));
-    setNotifications((prev) =>
-      prev.map((n) => (userNotifIds.has(n.id) ? { ...n, isRead: true } : n))
+    const unreadUserNotifIds = new Set(
+      userNotifications.filter((n) => !n.isRead).map((n) => n.id)
     );
-    showToastNotification("All notifications marked as read.");
-    axios.post("/api/notifications/mark_all_read/", { role: userRole }).catch(() => {});
+    setNotifications((prev) => prev.filter((n) => !unreadUserNotifIds.has(n.id)));
+    showToastNotification("All unread notifications cleared.");
+    axios
+      .post("/api/notifications/clear_all/", {
+        role: userRole,
+        userId: userRole === "student" ? currentStudent?.id : undefined,
+        unreadOnly: true,
+      })
+      .catch(() => {});
   };
 
   const handleClearAllNotifications = () => {
     const userNotifIds = new Set(userNotifications.map((n) => n.id));
     setNotifications((prev) => prev.filter((n) => !userNotifIds.has(n.id)));
     showToastNotification("Notifications cleared.");
-    axios.post("/api/notifications/clear_all/", { role: userRole }).catch(() => {});
+    axios
+      .post("/api/notifications/clear_all/", {
+        role: userRole,
+        userId: userRole === "student" ? currentStudent?.id : undefined,
+      })
+      .catch(() => {});
   };
 
   const handleNotificationClick = (notif: AppNotification) => {
@@ -881,7 +894,7 @@ export default function App() {
             ...s,
             batchId: s.batch || s.batchId,
             evaluation: savedEvals[s.id] || s.evaluation,
-            resources: savedResources[s.id] || s.resources || DEFAULT_SAMPLE_RESOURCES(s.id, s.batch || s.batchId),
+            resources: savedResources[s.id] || s.resources || (isDemoStudent(s) ? DEFAULT_SAMPLE_RESOURCES(s.id, s.batch || s.batchId) : []),
             reflectionVideo: savedVideos[s.id] || s.reflectionVideo,
             scores: s.scores || {
               quizScore: 0,
@@ -1021,17 +1034,6 @@ export default function App() {
     fetchDailyLogs();
     const dailyLogsTimer = setInterval(fetchDailyLogs, 4000);
 
-    // Fetch Notifications
-    const fetchNotifications = () => {
-      axios.get('/api/notifications/')
-        .then(res => {
-          if (Array.isArray(res.data)) setNotifications(res.data);
-        })
-        .catch(err => console.warn("API Fetch Error (Notifications):", err));
-    };
-    fetchNotifications();
-    const notifTimer = setInterval(fetchNotifications, 3500);
-
     // Fetch Intern Resources Vault
     axios.get('/api/intern-resources/')
       .then(res => {
@@ -1057,9 +1059,28 @@ export default function App() {
       clearInterval(projectsTimer);
       clearInterval(attendanceTimer);
       clearInterval(dailyLogsTimer);
-      clearInterval(notifTimer);
     };
   }, []);
+
+  // Real-Time Notifications Live Sync
+  useEffect(() => {
+    const fetchNotifications = () => {
+      const params = new URLSearchParams();
+      if (userRole) params.append("role", userRole);
+      if (userRole === "student" && currentStudent?.id) {
+        params.append("userId", currentStudent.id);
+      }
+      const queryStr = params.toString() ? `?${params.toString()}` : "";
+      axios.get(`/api/notifications/${queryStr}`)
+        .then((res) => {
+          if (Array.isArray(res.data)) setNotifications(res.data);
+        })
+        .catch((err) => console.warn("API Fetch Error (Notifications):", err));
+    };
+    fetchNotifications();
+    const notifTimer = setInterval(fetchNotifications, 3000);
+    return () => clearInterval(notifTimer);
+  }, [userRole, currentStudent?.id]);
 
   // Real-Time Live Q&A Sync
   useEffect(() => {
@@ -1937,6 +1958,7 @@ export default function App() {
               onClose={() => setNotificationMenuOpen(false)}
               notifications={userNotifications}
               onMarkAsRead={handleMarkNotificationAsRead}
+              onClearNotification={handleClearNotification}
               onMarkAllAsRead={handleMarkAllNotificationsAsRead}
               onClearAll={handleClearAllNotifications}
               onNotificationClick={handleNotificationClick}
